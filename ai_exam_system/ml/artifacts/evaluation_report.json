@@ -1,0 +1,15 @@
+{
+  "winner_model": "logistic_regression",
+  "data_source": "synthetic",
+  "sample_count": 500,
+  "train_size": 410,
+  "val_size": 49,
+  "test_size": 41,
+  "test_metrics": {
+    "roc_auc": 0.8929,
+    "pr_auc": 0.8714,
+    "log_loss": 0.3335,
+    "brier_score": 0.1205
+  },
+  "important_caveat": "Metrics are from SYNTHETIC data and do not represent real performance."
+}

@@ -1,0 +1,29 @@
+{
+  "feature_columns": [
+    "question_difficulty",
+    "skill_attempts_before",
+    "skill_accuracy_before",
+    "overall_attempts_before",
+    "overall_accuracy_before",
+    "mastery_before",
+    "retention_before",
+    "effective_knowledge_before",
+    "days_since_skill_attempt",
+    "previous_is_correct",
+    "previous_response_time"
+  ],
+  "imputation": {
+    "question_difficulty": 3.0,
+    "skill_attempts_before": 10.0,
+    "skill_accuracy_before": 0.5236219476539734,
+    "overall_attempts_before": 25.0,
+    "overall_accuracy_before": 0.5117266282244477,
+    "mastery_before": 0.5152673933574035,
+    "retention_before": 0.6709743839514934,
+    "effective_knowledge_before": 0.30686301140977573,
+    "days_since_skill_attempt": 1.9354990726150043,
+    "previous_is_correct": 0.5,
+    "previous_response_time": 60.5857807979886
+  },
+  "target": "target_is_correct"
+}

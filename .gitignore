@@ -1,0 +1,61 @@
+# AI Adaptive Exam System - Git ignore rules
+
+# ---- Python & Caches ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+**/*__pycache__*
+
+# ---- Virtual environments ----
+venv/
+.venv/
+env/
+ai_exam_system/venv/
+**/venv/
+
+# ---- Environment secrets & credentials ----
+.env
+.env.*
+ai_exam_system/.env
+**/.env
+**/.env.*
+!.env.example
+!ai_exam_system/.env.example
+
+# ---- ML model artifacts ----
+ml/artifacts/*.pkl
+ml/artifacts/*.bin
+ai_exam_system/ml/artifacts/*.pkl
+ai_exam_system/ml/artifacts/*.bin
+
+# ---- MLflow experiment tracking ----
+mlruns/
+ai_exam_system/mlruns/
+
+# ---- Test cache ----
+.pytest_cache/
+ai_exam_system/.pytest_cache/
+htmlcov/
+.coverage
+
+# ---- Node.js & Frontend Build ----
+node_modules/
+frontend/node_modules/
+**/node_modules/
+frontend/dist/
+frontend/.vite/
+dist/
+
+# ---- Logs ----
+*.log
+**/*.log
+
+# ---- Editor and OS ----
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

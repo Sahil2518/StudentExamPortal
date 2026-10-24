@@ -1,0 +1,7 @@
+Training run: 2026-10-05 12:31:05
+Winner: logistic_regression
+Data source: synthetic
+Samples: 500
+Test ROC-AUC: 0.8929
+Elapsed: 54.4s
+Caveat: Metrics are from SYNTHETIC data and do not represent real performance.
