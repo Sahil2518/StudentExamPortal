@@ -74,7 +74,7 @@ class LiveExamAnswerInput(BaseModel):
     question_id: uuid.UUID
     selected_option: Optional[str] = None
     review_status: str = Field(default="answered")
-    time_taken: Optional[int] = 0
+    time_taken: Optional[float] = 0.0
 
 
 class ExamSessionResponse(BaseModel):
