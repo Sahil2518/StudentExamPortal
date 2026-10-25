@@ -17,6 +17,7 @@ result responses after submission.
 """
 
 import random
+import uuid
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
@@ -235,6 +236,41 @@ def recommend_question(
     return _safe_question(selected, include_answer=False)
 
 
+@router.get(
+    "/questions/pending-review",
+    summary="Reviewer: list questions awaiting human review"
+)
+def list_pending_review_questions(
+    domain: Optional[str] = Query(default=None, description="Filter by domain"),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Return all questions with approval_status='pending_review'.
+
+    Accessible by reviewers and admins. Shows full question details
+    including correct_answer so reviewers can verify accuracy.
+    LLM-generated questions enter this queue automatically.
+    """
+    if current_user.role not in ("admin", "reviewer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only reviewers and admins can access the review queue."
+        )
+
+    query = db.query(Question).filter(
+        Question.approval_status == "pending_review",
+        Question.is_active == True
+    )
+    if domain:
+        query = query.filter(Question.domain == domain)
+
+    questions = query.order_by(Question.created_at.asc()).limit(limit).all()
+
+    return [_safe_question(q, include_answer=True) for q in questions]
+
+
 @router.get("/questions/{question_id}", summary="Get one question by id")
 def get_question(
     question_id: str,
@@ -417,7 +453,8 @@ def generate_ai_question(
         db=db,
         domain=body.domain,
         skill=body.skill,
-        target_difficulty=body.target_difficulty or 0.0
+        target_difficulty=body.target_difficulty or 0.0,
+        approval_status="pending_review"
     )
     if not q:
         raise HTTPException(
@@ -425,3 +462,72 @@ def generate_ai_question(
             detail="Failed to synthesize question with AI model."
         )
     return _safe_question(q, include_answer=current_user.role in ("admin", "reviewer"))
+
+
+
+# ---------------------------------------------------------------------------
+# Reviewer routes: Human-in-the-Loop Review Pipeline
+# ---------------------------------------------------------------------------
+
+class CertifyInput(BaseModel):
+    """Input for certifying (approving or rejecting) a pending question."""
+    action: str = Field(..., pattern="^(approve|reject)$")
+    reviewer_note: Optional[str] = Field(default=None, max_length=1000)
+
+
+@router.post(
+    "/questions/{question_id}/certify",
+    summary="Reviewer: approve or reject a pending question"
+)
+def certify_question(
+    question_id: uuid.UUID,
+    body: CertifyInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Approve or reject a question that is pending human review.
+
+    - approve: sets approval_status to 'approved' and records the reviewer
+    - reject:  sets approval_status to 'rejected' and deactivates the question
+
+    Only reviewers and admins can certify questions.
+    """
+    if current_user.role not in ("admin", "reviewer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only reviewers and admins can certify questions."
+        )
+
+    question = db.query(Question).filter(Question.id == question_id).first()
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found."
+        )
+
+    if question.approval_status != "pending_review":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Question is not pending review (current status: {question.approval_status})."
+        )
+
+    if body.action == "approve":
+        question.approval_status = "approved"
+        question.approved_by = str(current_user.id)
+        message = "Question approved and added to active question bank."
+    else:  # reject
+        question.approval_status = "rejected"
+        question.is_active = False
+        message = "Question rejected and removed from active question bank."
+
+    db.commit()
+    db.refresh(question)
+
+    return {
+        "message": message,
+        "question_id": str(question.id),
+        "new_status": question.approval_status,
+        "reviewed_by": str(current_user.id),
+        "reviewer_note": body.reviewer_note
+    }

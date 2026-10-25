@@ -178,6 +178,11 @@ def generate_llm_question(
     system_prompt = (
         "You are an expert assessment creator for national and international competitive entrance examinations. "
         "Create challenging, accurate, unambiguous multiple-choice questions matching official exam standards. "
+        "Use LaTeX math notation for all mathematical expressions: $...$ for inline math (e.g. $x^2 + y^2 = r^2$) "
+        "and $$...$$ for display/block equations (e.g. $$\\int_0^1 f(x)\\,dx$$). "
+        "Use proper LaTeX for fractions (\\frac{a}{b}), square roots (\\sqrt{x}), integrals (\\int), "
+        "summations (\\sum), Greek letters (\\alpha, \\beta, \\theta, \\lambda), "
+        "subscripts/superscripts (x_{n}, x^{2}), vectors (\\vec{v}), and chemical formulas. "
         "Output strictly raw valid JSON with no markdown formatting."
     )
 
@@ -557,7 +562,8 @@ def generate_and_persist_question(
     domain: str,
     skill: Optional[str] = None,
     target_difficulty: float = 0.0,
-    exam_name: Optional[str] = None
+    exam_name: Optional[str] = None,
+    approval_status: str = "approved"
 ) -> Optional[Question]:
     """
     Synthesize a single question via LLM (or robust fallback), persist it into the database
@@ -590,7 +596,7 @@ def generate_and_persist_question(
         question_type="multiple_choice",
         is_active=True,
         source="llm_generated",
-        approval_status="approved"
+        approval_status=approval_status
     )
 
     try:

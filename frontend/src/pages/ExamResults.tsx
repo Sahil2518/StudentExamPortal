@@ -20,6 +20,44 @@ import {
 } from 'recharts'
 import client from '../api/client'
 import Spinner from '../components/Spinner'
+import MathText from '../components/MathText'
+
+interface RapidGuessFlag {
+  question_id: string
+  skill: string
+  difficulty: number
+  time_taken_seconds: number
+  threshold_seconds: number
+  was_correct: boolean
+}
+
+interface FatigueBucket {
+  segment: string
+  questions: number
+  attempted: number
+  correct: number
+  accuracy_pct: number
+  avg_time_seconds: number | null
+}
+
+interface FatigueAnalytics {
+  rapid_guess_count: number
+  rapid_guess_flags: RapidGuessFlag[]
+  fatigue_detected: boolean
+  fatigue_severity: string
+  fatigue_buckets: FatigueBucket[]
+  total_exam_time_seconds: number | null
+}
+
+interface ThetaVector {
+  theta_conceptual: number
+  theta_numerical: number
+  theta_analytical: number
+  composite_theta: number
+  n_conceptual: number
+  n_numerical: number
+  n_analytical: number
+}
 
 interface QuestionResult {
   question_id: string
@@ -63,6 +101,8 @@ interface ResultsData {
   question_results: QuestionResult[]
   skill_breakdown?: SkillStat[]
   recommendations: string[]
+  fatigue_analytics?: FatigueAnalytics
+  theta_vector?: ThetaVector
 }
 
 export default function ExamResults() {
@@ -244,9 +284,127 @@ export default function ExamResults() {
         </div>
       )}
 
+      {/* MIRT: 3D Ability Vector */}
+      {data.theta_vector && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 space-y-3">
+          <h2 className="text-sm font-bold text-gray-800">🧬 Multidimensional Ability Profile (MIRT)</h2>
+          <p className="text-xs text-gray-500">
+            Your cognitive ability estimated across 3 independent dimensions using Item Response Theory.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { key: 'theta_conceptual', label: 'Conceptual', icon: '📚', n: data.theta_vector.n_conceptual },
+              { key: 'theta_numerical', label: 'Numerical', icon: '🔢', n: data.theta_vector.n_numerical },
+              { key: 'theta_analytical', label: 'Analytical', icon: '🔍', n: data.theta_vector.n_analytical },
+            ].map(({ key, label, icon, n }) => {
+              const raw = data.theta_vector![key as keyof ThetaVector] as number
+              const pct = Math.round(((raw + 4) / 8) * 100)
+              const color = raw >= 1 ? 'bg-green-500' : raw >= -0.5 ? 'bg-yellow-400' : 'bg-red-400'
+              return (
+                <div key={key} className="bg-gray-50 rounded-lg border border-gray-200 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-700">{icon} {label}</span>
+                    <span className="text-xs text-gray-400">{n}q</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className={`${color} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="text-center">
+                    <span className={`text-lg font-bold ${raw >= 1 ? 'text-green-700' : raw >= -0.5 ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {raw >= 0 ? '+' : ''}{raw.toFixed(2)}
+                    </span>
+                    <span className="text-xs text-gray-400 ml-1">θ</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-md px-4 py-2 flex items-center justify-between">
+            <span className="text-xs text-indigo-700 font-medium">Composite Ability (θ)</span>
+            <span className="text-base font-extrabold text-indigo-800">
+              {data.theta_vector.composite_theta >= 0 ? '+' : ''}{data.theta_vector.composite_theta.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Cognitive Fatigue Analytics */}
+      {data.fatigue_analytics && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-gray-800">🧠 Cognitive Fatigue Analytics</h2>
+            {data.fatigue_analytics.fatigue_detected && (
+              <span className={`text-xs font-bold px-2 py-1 rounded ${
+                data.fatigue_analytics.fatigue_severity === 'severe'
+                  ? 'bg-red-100 text-red-700'
+                  : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                ⚠ {data.fatigue_analytics.fatigue_severity.charAt(0).toUpperCase() + data.fatigue_analytics.fatigue_severity.slice(1)} Fatigue Detected
+              </span>
+            )}
+            {!data.fatigue_analytics.fatigue_detected && (
+              <span className="text-xs font-bold px-2 py-1 rounded bg-green-100 text-green-700">
+                ✓ No Fatigue Detected
+              </span>
+            )}
+          </div>
+
+          {/* Fatigue Curve Buckets */}
+          {data.fatigue_analytics.fatigue_buckets.length > 0 && (
+            <div className="grid grid-cols-3 gap-3">
+              {data.fatigue_analytics.fatigue_buckets.map((bucket, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg border border-gray-200 p-3 space-y-1">
+                  <div className="text-xs font-semibold text-gray-600">{bucket.segment}</div>
+                  <div className="text-lg font-bold text-gray-900">{bucket.accuracy_pct}%</div>
+                  <div className="text-xs text-gray-400">accuracy</div>
+                  {bucket.avg_time_seconds != null && (
+                    <div className="text-xs text-gray-500">{bucket.avg_time_seconds}s avg/q</div>
+                  )}
+                  <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                    <div
+                      className={`h-1.5 rounded-full ${bucket.accuracy_pct >= 70 ? 'bg-green-500' : bucket.accuracy_pct >= 40 ? 'bg-yellow-400' : 'bg-red-400'}`}
+                      style={{ width: `${bucket.accuracy_pct}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Rapid Guess Flags */}
+          {data.fatigue_analytics.rapid_guess_count > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-orange-700">⚡ Rapid Guesses Detected:</span>
+                <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded">
+                  {data.fatigue_analytics.rapid_guess_count} questions
+                </span>
+              </div>
+              <div className="space-y-1">
+                {data.fatigue_analytics.rapid_guess_flags.map((flag, i) => (
+                  <div key={i} className="flex items-center gap-3 text-xs bg-orange-50 border border-orange-200 rounded px-3 py-1.5">
+                    <span className="text-orange-600 font-mono">{flag.time_taken_seconds}s</span>
+                    <span className="text-gray-600">{flag.skill || 'Unknown Topic'}</span>
+                    <span className="text-gray-400">Difficulty: {flag.difficulty}/5</span>
+                    <span className={`ml-auto font-semibold ${flag.was_correct ? 'text-green-600' : 'text-red-500'}`}>
+                      {flag.was_correct ? '✓ Correct' : '✗ Wrong'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.fatigue_analytics.total_exam_time_seconds != null && (
+            <div className="text-xs text-gray-500 text-right">
+              Total tracked time: <strong>{Math.round(data.fatigue_analytics.total_exam_time_seconds / 60)} min {data.fatigue_analytics.total_exam_time_seconds % 60}s</strong>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Detailed Per-Question Breakdown */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 space-y-4">
-        <h2 className="text-sm font-bold text-gray-900">Per-Question Review & Solutions</h2>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 space-y-4">        <h2 className="text-sm font-bold text-gray-900">Per-Question Review & Solutions</h2>
         <div className="space-y-4">
           {data.question_results.map((q, idx) => (
             <div
@@ -261,7 +419,7 @@ export default function ExamResults() {
                   {q.is_correct ? '✓ Correct (+4)' : '✗ Incorrect (-1)'}
                 </span>
               </div>
-              <p className="text-gray-800 text-sm font-medium">{q.question_text}</p>
+              <p className="text-gray-800 text-sm font-medium"><MathText text={q.question_text} /></p>
               <div className="flex gap-4 text-xs">
                 <span>
                   Your Answer:{' '}
@@ -276,7 +434,7 @@ export default function ExamResults() {
               {q.explanation && (
                 <div className="bg-white p-2.5 rounded border border-gray-200 text-gray-700 mt-2">
                   <span className="font-semibold text-gray-900">Solution: </span>
-                  {q.explanation}
+                  <MathText text={q.explanation} />
                 </div>
               )}
             </div>

@@ -25,6 +25,20 @@ from app.models.question_attempt import QuestionAttempt
 from app.models.question import Question
 from app.services.adaptive_engine import get_skill_state
 
+# MIRT: Multidimensional IRT for 3D ability estimation (imported lazily to avoid circular deps)
+try:
+    from ml.irt_model import MultidimensionalIRT as _MultidimensionalIRT
+    _mirt = _MultidimensionalIRT()
+except Exception:
+    _mirt = None  # type: ignore
+
+# MIRT: Multidimensional IRT for 3D ability estimation
+try:
+    from ml.irt_model import MultidimensionalIRT
+    _mirt = MultidimensionalIRT()
+except Exception:
+    _mirt = None  # type: ignore
+
 
 router = APIRouter(prefix="/exam-sessions", tags=["Exam Sessions"])
 
@@ -872,12 +886,102 @@ def get_session_results(
             "total_questions": total_questions,
         }
 
+    # ---------------------------------------------------------------------------
+    # Multidimensional IRT (MIRT) Theta Vector
+    # Estimates 3-dimensional cognitive ability: conceptual, numerical, analytical
+    # ---------------------------------------------------------------------------
+    theta_vector = None
+    if _mirt is not None and question_results:
+        try:
+            theta_vector = _mirt.estimate_theta(question_results)
+        except Exception:
+            theta_vector = None
+
+    # ---------------------------------------------------------------------------
+    # Cognitive Fatigue & Rapid-Guess Detection Engine
+    # Analyzes per-question time and accuracy patterns to detect fatigue onset
+    # and rapid guessing (answering too fast relative to question difficulty).
+    # ---------------------------------------------------------------------------
+
+    # Rapid-guess thresholds by difficulty (seconds)
+    RAPID_GUESS_THRESHOLDS = {1: 3, 2: 3, 3: 5, 4: 8, 5: 8}
+
+    timed_results = [qr for qr in question_results if qr.get("time_taken") is not None]
+
+    rapid_guess_flags = []
+    for qr in timed_results:
+        diff = qr.get("difficulty", 3)
+        threshold = RAPID_GUESS_THRESHOLDS.get(diff, 5)
+        time_sec = float(qr["time_taken"]) if qr.get("time_taken") else None
+        if time_sec is not None and time_sec < threshold:
+            rapid_guess_flags.append({
+                "question_id": qr["question_id"],
+                "skill": qr.get("skill", ""),
+                "difficulty": diff,
+                "time_taken_seconds": round(time_sec, 2),
+                "threshold_seconds": threshold,
+                "was_correct": qr["is_correct"],
+            })
+
+    # Fatigue curve: split exam into thirds, compute accuracy per segment
+    n = len(question_results)
+    fatigue_buckets = []
+    if n >= 3:
+        segment_size = max(1, n // 3)
+        for seg_idx in range(3):
+            start = seg_idx * segment_size
+            end = (seg_idx + 1) * segment_size if seg_idx < 2 else n
+            segment = question_results[start:end]
+            answered = [s for s in segment if s.get("selected_answer")]
+            correct = [s for s in answered if s.get("is_correct")]
+            avg_time = None
+            timed_seg = [s for s in segment if s.get("time_taken") is not None]
+            if timed_seg:
+                avg_time = round(sum(float(s["time_taken"]) for s in timed_seg) / len(timed_seg), 2)
+            fatigue_buckets.append({
+                "segment": ["Early (First Third)", "Middle (Second Third)", "Late (Final Third)"][seg_idx],
+                "questions": len(segment),
+                "attempted": len(answered),
+                "correct": len(correct),
+                "accuracy_pct": round(len(correct) / len(answered) * 100) if answered else 0,
+                "avg_time_seconds": avg_time,
+            })
+
+    # Fatigue verdict: compare early vs late accuracy
+    fatigue_detected = False
+    fatigue_severity = "none"
+    if len(fatigue_buckets) >= 3:
+        early_acc = fatigue_buckets[0]["accuracy_pct"]
+        late_acc = fatigue_buckets[2]["accuracy_pct"]
+        drop = early_acc - late_acc
+        if drop >= 30:
+            fatigue_detected = True
+            fatigue_severity = "severe"
+        elif drop >= 15:
+            fatigue_detected = True
+            fatigue_severity = "moderate"
+        elif drop >= 5:
+            fatigue_severity = "mild"
+
+    fatigue_analytics = {
+        "rapid_guess_count": len(rapid_guess_flags),
+        "rapid_guess_flags": rapid_guess_flags,
+        "fatigue_detected": fatigue_detected,
+        "fatigue_severity": fatigue_severity,
+        "fatigue_buckets": fatigue_buckets,
+        "total_exam_time_seconds": round(sum(
+            float(qr["time_taken"]) for qr in timed_results
+        ), 2) if timed_results else None,
+    }
+
     return {
         **_build_session_response(session),
         "question_results": question_results,
         "skill_mastery": mastery_state,
         "scorecard": scorecard,
-        "recommendations": session.recommendations or []
+        "recommendations": session.recommendations or [],
+        "fatigue_analytics": fatigue_analytics,
+        "theta_vector": theta_vector,
     }
 
 

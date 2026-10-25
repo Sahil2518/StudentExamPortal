@@ -15,6 +15,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import client from '../api/client'
 import Spinner from '../components/Spinner'
 import { useCameraProctoring } from '../hooks/useCameraProctoring'
+import MathText from '../components/MathText'
 
 interface SessionDetail {
   id: string
@@ -440,7 +441,7 @@ export default function ExamSession() {
                 </div>
 
                 <div className="text-gray-900 text-base leading-relaxed font-medium">
-                  {liveQuestion.question_text}
+                  <MathText text={liveQuestion.question_text} />
                 </div>
 
                 {/* Options List */}
@@ -466,7 +467,7 @@ export default function ExamSession() {
                         >
                           {key}
                         </div>
-                        <div className="text-gray-800 text-sm font-normal">{text}</div>
+                        <div className="text-gray-800 text-sm font-normal"><MathText text={text} /></div>
                       </div>
                     )
                   })}
@@ -709,7 +710,7 @@ export default function ExamSession() {
         </div>
 
         <p className="text-gray-800 text-base leading-relaxed font-medium">
-          {adaptiveQuestion.question}
+          <MathText text={adaptiveQuestion.question} />
         </p>
 
         {phase === 'question' && (
@@ -722,7 +723,7 @@ export default function ExamSession() {
                 className="flex items-start gap-3 w-full text-left px-4 py-3 border border-gray-300 rounded-md hover:border-blue-500 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 transition-colors"
               >
                 <span className="font-semibold text-blue-600 min-w-[1.5rem]">{key}.</span>
-                <span className="text-gray-700">{adaptiveQuestion.options[key]}</span>
+                <span className="text-gray-700"><MathText text={adaptiveQuestion.options[key]} /></span>
               </button>
             ))}
           </div>
@@ -748,7 +749,7 @@ export default function ExamSession() {
                     >
                       {key}.
                     </span>
-                    <span className="text-gray-700">{adaptiveQuestion.options[key]}</span>
+                    <span className="text-gray-700"><MathText text={adaptiveQuestion.options[key]} /></span>
                     {isCorrect && <span className="ml-auto text-green-600 text-xs font-semibold">Correct</span>}
                     {isSelected && !isCorrect && (
                       <span className="ml-auto text-red-500 text-xs font-semibold">Your choice</span>
@@ -772,7 +773,7 @@ export default function ExamSession() {
               </p>
               {attemptResult.explanation && (
                 <p className="text-xs text-gray-700 leading-relaxed mt-1">
-                  💡 <strong>Explanation:</strong> {attemptResult.explanation}
+                  💡 <strong>Explanation:</strong> <MathText text={attemptResult.explanation} />
                 </p>
               )}
             </div>

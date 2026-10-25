@@ -366,3 +366,175 @@ class IRTModel:
 
         model.is_fitted = True
         return model
+
+
+# ---------------------------------------------------------------------------
+# Multidimensional IRT (MIRT): 3-Dimensional Ability Vector
+# ---------------------------------------------------------------------------
+
+class MultidimensionalIRT:
+    """
+    Multidimensional Item Response Theory (MIRT) model.
+
+    Estimates a 3-dimensional ability vector for each student:
+        theta_conceptual  - Conceptual understanding and theory recall
+        theta_numerical   - Numerical computation and problem solving
+        theta_analytical  - Analytical reasoning and application
+
+    Each dimension is estimated independently using the same 2PL IRT
+    framework, partitioning questions by their primary cognitive demand.
+
+    Skill classification heuristics:
+        conceptual  - questions tagged with theory, definition, principle, law, concept
+        numerical   - questions with calculation, formula, compute, value, find
+        analytical  - questions with analyze, apply, design, interpret, derive
+        (unclassified questions contribute to all three dimensions equally)
+
+    Usage:
+        mirt = MultidimensionalIRT()
+        theta_vector = mirt.estimate_theta(question_results)
+        # returns {"theta_conceptual": float, "theta_numerical": float,
+        #          "theta_analytical": float, "composite_theta": float}
+    """
+
+    # Keywords that indicate a question's primary cognitive dimension
+    CONCEPTUAL_KEYWORDS = {
+        "define", "definition", "concept", "principle", "law", "theory",
+        "state", "describe", "explain", "what is", "which of", "property",
+        "characteristic", "type", "classification"
+    }
+    NUMERICAL_KEYWORDS = {
+        "calculate", "compute", "find", "value", "evaluate", "solve",
+        "determine", "how much", "how many", "numerical", "formula",
+        "equation", "integral", "derivative", "sum", "product"
+    }
+    ANALYTICAL_KEYWORDS = {
+        "analyze", "analyse", "apply", "design", "interpret", "derive",
+        "predict", "infer", "compare", "relate", "justify", "effect",
+        "impact", "reason", "why", "how does", "consequence"
+    }
+
+    def _classify_question(self, question_text: str, skill: str = "") -> str:
+        """
+        Classify a question into conceptual / numerical / analytical.
+
+        Returns 'conceptual', 'numerical', 'analytical', or 'all'
+        (if no clear signal, the question contributes to all dimensions).
+        """
+        combined = (question_text + " " + skill).lower()
+
+        conceptual_score = sum(1 for kw in self.CONCEPTUAL_KEYWORDS if kw in combined)
+        numerical_score = sum(1 for kw in self.NUMERICAL_KEYWORDS if kw in combined)
+        analytical_score = sum(1 for kw in self.ANALYTICAL_KEYWORDS if kw in combined)
+
+        max_score = max(conceptual_score, numerical_score, analytical_score)
+        if max_score == 0:
+            return "all"
+
+        if conceptual_score == max_score:
+            return "conceptual"
+        if numerical_score == max_score:
+            return "numerical"
+        return "analytical"
+
+    def _estimate_1d_theta(
+        self,
+        responses: list,  # list of (is_correct: bool, difficulty: int)
+    ) -> float:
+        """
+        Estimate scalar theta from a list of (is_correct, difficulty) pairs.
+
+        Uses a simplified MAP estimate:
+            - difficulty 1-5 maps to IRT b parameter: b = (difficulty - 3) * 0.75
+            - discrimination a = 1.0 for all items (1PL fallback)
+            - prior: theta ~ N(0, 1)
+
+        Returns 0.0 if no responses are available.
+        """
+        if not responses:
+            return 0.0
+
+        # Convert difficulty (1-5) to IRT b scale (-1.5 to +1.5)
+        def b_from_difficulty(d: int) -> float:
+            return (d - 3) * 0.75
+
+        def neg_log_posterior(theta_arr):
+            theta = theta_arr[0]
+            ll = 0.0
+            for is_correct, difficulty in responses:
+                b = b_from_difficulty(difficulty)
+                # 2PL with a=1.0
+                p = float(expit(1.0 * (theta - b)))
+                p = max(1e-9, min(1 - 1e-9, p))
+                ll += (1.0 if is_correct else 0.0) * np.log(p)
+                ll += (0.0 if is_correct else 1.0) * np.log(1 - p)
+            # Normal(0, 1) prior on theta
+            ll -= 0.5 * theta ** 2
+            return -ll
+
+        result = minimize(
+            neg_log_posterior, x0=[0.0],
+            method="L-BFGS-B", bounds=[(-4.0, 4.0)]
+        )
+        return round(float(result.x[0]), 4)
+
+    def estimate_theta(self, question_results: list) -> dict:
+        """
+        Estimate the 3D theta vector from a list of question result dicts.
+
+        Each element of question_results should have:
+            - is_correct: bool
+            - difficulty: int (1-5)
+            - question_text: str
+            - skill: str (optional)
+
+        Returns a dict:
+            {
+              "theta_conceptual": float,
+              "theta_numerical": float,
+              "theta_analytical": float,
+              "composite_theta": float,
+              "n_conceptual": int,
+              "n_numerical": int,
+              "n_analytical": int,
+            }
+        """
+        conceptual_responses = []
+        numerical_responses = []
+        analytical_responses = []
+
+        for qr in question_results:
+            is_correct = bool(qr.get("is_correct", False))
+            difficulty = int(qr.get("difficulty", 3))
+            q_text = str(qr.get("question_text", ""))
+            skill = str(qr.get("skill", ""))
+
+            dimension = self._classify_question(q_text, skill)
+
+            if dimension == "conceptual":
+                conceptual_responses.append((is_correct, difficulty))
+            elif dimension == "numerical":
+                numerical_responses.append((is_correct, difficulty))
+            elif dimension == "analytical":
+                analytical_responses.append((is_correct, difficulty))
+            else:  # "all" - unclassified: contribute 1/3 weight to each dimension
+                conceptual_responses.append((is_correct, difficulty))
+                numerical_responses.append((is_correct, difficulty))
+                analytical_responses.append((is_correct, difficulty))
+
+        theta_c = self._estimate_1d_theta(conceptual_responses)
+        theta_n = self._estimate_1d_theta(numerical_responses)
+        theta_a = self._estimate_1d_theta(analytical_responses)
+
+        # Composite theta: weighted average (equal weights, could be domain-tuned)
+        composite = round((theta_c + theta_n + theta_a) / 3.0, 4)
+
+        return {
+            "theta_conceptual": theta_c,
+            "theta_numerical": theta_n,
+            "theta_analytical": theta_a,
+            "composite_theta": composite,
+            "n_conceptual": len(conceptual_responses),
+            "n_numerical": len(numerical_responses),
+            "n_analytical": len(analytical_responses),
+        }
