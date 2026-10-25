@@ -10,6 +10,7 @@
 import React from 'react'
 import { Link, useLocation, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import AIAssistantWidget from './AIAssistantWidget'
 
 export default function Layout() {
   const { user, logout, isAdmin, isReviewer } = useAuth()
@@ -105,6 +106,9 @@ export default function Layout() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Outlet />
       </main>
+
+      {/* Omnipresent AI Assistant, Doubt Solver & Exam Integrity Monitor */}
+      <AIAssistantWidget />
     </div>
   )
 }

@@ -43,6 +43,7 @@ from app.routes.exam_session_routes import router as exam_session_router
 from app.routes.proctoring_routes import router as proctoring_router
 from app.routes.admin_routes import router as admin_router
 from app.routes.tutor_routes import router as tutor_router
+from app.routes.ai_assistant_routes import router as ai_assistant_router
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +165,9 @@ app.include_router(admin_router)
 
 # LLM Tutor - explains answers and gives study recommendations
 app.include_router(tutor_router)
+
+# Omnipresent AI Assistant, Doubt Solver & Exam Malpractice Monitor
+app.include_router(ai_assistant_router)
 
 
 # ---------------------------------------------------------------------------
