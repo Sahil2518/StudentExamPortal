@@ -141,33 +141,42 @@ export default function ExamSession() {
 
   // Initial loader
   useEffect(() => {
+    let cancelled = false
     const init = async () => {
       setPhase('loading')
       try {
         const s = await loadSession()
+        if (cancelled) return
         setSession(s)
 
         if (s.exam_type === 'live') {
           const pal = await loadPalette()
+          if (cancelled) return
           setPalette(pal)
           if (pal.length > 0) {
             await loadLiveQuestion(1)
           }
+          if (cancelled) return
           setPhase('question')
         } else {
           // Adaptive mode
           const q = await loadNextAdaptiveQuestion(s.id)
+          if (cancelled) return
           setAdaptiveQuestion(q)
           questionStartRef.current = Date.now()
           setPhase('question')
         }
       } catch (err: unknown) {
+        if (cancelled) return
         const e = err as Error
         setErrorMsg(e.message || 'Failed to initialize session.')
         setPhase('error')
       }
     }
     init()
+    return () => {
+      cancelled = true
+    }
   }, [loadSession, loadPalette, loadLiveQuestion, loadNextAdaptiveQuestion])
 
   // Proctoring telemetry
@@ -271,7 +280,14 @@ export default function ExamSession() {
   }
 
   const jumpToQuestion = async (targetSeq: number) => {
-    if (targetSeq === activeSeq || savingAnswer) return
+    if (targetSeq === activeSeq) return
+    if (savingAnswer) {
+      let retries = 0
+      while (savingAnswer && retries < 15) {
+        await new Promise((r) => setTimeout(r, 200))
+        retries++
+      }
+    }
     // Auto-save current choice before jumping if changed
     if (liveQuestion && selectedLiveOption !== liveQuestion.selected_option) {
       await client.post(`/exam-sessions/${sessionId}/live-answer`, {
@@ -449,17 +465,19 @@ export default function ExamSession() {
                   {Object.entries(liveQuestion.options).map(([key, text]) => {
                     const isSelected = selectedLiveOption === key
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={key}
+                        data-testid={`option-${key}`}
                         onClick={() => setSelectedLiveOption(key)}
-                        className={`flex items-start gap-3 p-3.5 rounded-lg border-2 cursor-pointer transition-all ${
+                        className={`w-full text-left flex items-start gap-3 p-3.5 rounded-lg border-2 cursor-pointer transition-all ${
                           isSelected
                             ? 'border-indigo-600 bg-indigo-50/60 shadow-sm'
                             : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
                         <div
-                          className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mt-0.5 border ${
+                          className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mt-0.5 border shrink-0 ${
                             isSelected
                               ? 'bg-indigo-600 text-white border-indigo-600'
                               : 'bg-white text-gray-600 border-gray-400'
@@ -468,7 +486,7 @@ export default function ExamSession() {
                           {key}
                         </div>
                         <div className="text-gray-800 text-sm font-normal"><MathText text={text} /></div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -577,6 +595,7 @@ export default function ExamSession() {
                   return (
                     <button
                       key={item.sequence_number}
+                      data-testid={`palette-btn-${item.sequence_number}`}
                       onClick={() => jumpToQuestion(item.sequence_number)}
                       className={`h-9 rounded text-xs transition-all flex items-center justify-center ${bg} ${
                         isActive ? 'ring-2 ring-indigo-700 ring-offset-2 scale-105' : ''
@@ -718,6 +737,7 @@ export default function ExamSession() {
             {optionKeys.map((key) => (
               <button
                 key={key}
+                data-testid={`adaptive-option-${key}`}
                 onClick={() => handleAdaptiveAnswer(key)}
                 disabled={submittingAdaptive}
                 className="flex items-start gap-3 w-full text-left px-4 py-3 border border-gray-300 rounded-md hover:border-blue-500 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 transition-colors"

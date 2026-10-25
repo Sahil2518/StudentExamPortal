@@ -37,7 +37,14 @@ def sync():
             "ALTER TABLE exam_sessions ADD COLUMN IF NOT EXISTS exam_paper_title VARCHAR(255);",
             "ALTER TABLE exam_session_questions ADD COLUMN IF NOT EXISTS review_status VARCHAR(30) DEFAULT 'not_visited' NOT NULL;",
             "ALTER TABLE exam_session_questions ADD COLUMN IF NOT EXISTS selected_option VARCHAR(500);",
-            "ALTER TABLE exam_session_questions ADD COLUMN IF NOT EXISTS is_correct BOOLEAN;"
+            "ALTER TABLE exam_session_questions ADD COLUMN IF NOT EXISTS is_correct BOOLEAN;",
+            "ALTER TABLE proctoring_events ADD COLUMN IF NOT EXISTS client_event_id VARCHAR(100);",
+            "ALTER TABLE proctoring_events ADD COLUMN IF NOT EXISTS sequence_number INTEGER;",
+            "ALTER TABLE proctoring_events ADD COLUMN IF NOT EXISTS confidence FLOAT DEFAULT 1.0;",
+            "ALTER TABLE proctoring_events ADD COLUMN IF NOT EXISTS evidence_ref TEXT;",
+            "ALTER TABLE proctoring_events ADD COLUMN IF NOT EXISTS event_metadata JSONB;",
+            "ALTER TABLE proctoring_events ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';",
+            "ALTER TABLE proctoring_events ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();"
         ]
         for stmt in alter_statements:
             conn.execute(text(stmt))

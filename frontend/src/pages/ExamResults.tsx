@@ -100,7 +100,7 @@ interface ResultsData {
   scorecard?: Scorecard
   question_results: QuestionResult[]
   skill_breakdown?: SkillStat[]
-  recommendations: string[]
+  recommendations: Array<string | { skill?: string; suggestion?: string; priority?: number; [key: string]: unknown }>
   fatigue_analytics?: FatigueAnalytics
   theta_vector?: ThetaVector
 }
@@ -274,12 +274,23 @@ export default function ExamResults() {
             💡 AI Study Recommendations
           </h2>
           <ul className="space-y-1">
-            {data.recommendations.map((rec, i) => (
-              <li key={i} className="text-xs text-blue-800 flex items-start gap-2">
-                <span className="text-blue-500 mt-0.5">•</span>
-                <span>{rec}</span>
-              </li>
-            ))}
+            {data.recommendations.map((rec, i) => {
+              let text = ''
+              if (typeof rec === 'string') {
+                text = rec
+              } else if (rec && typeof rec === 'object') {
+                const recObj = rec as { skill?: string; suggestion?: string }
+                text = recObj.suggestion
+                  ? (recObj.skill ? `[${recObj.skill}] ${recObj.suggestion}` : recObj.suggestion)
+                  : JSON.stringify(rec)
+              }
+              return (
+                <li key={i} className="text-xs text-blue-800 flex items-start gap-2">
+                  <span className="text-blue-500 mt-0.5">•</span>
+                  <span>{text}</span>
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}

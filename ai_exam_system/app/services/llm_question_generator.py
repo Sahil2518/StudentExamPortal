@@ -692,8 +692,6 @@ def generate_and_persist_batch(
     try:
         db.add_all(questions_to_insert)
         db.commit()
-        for q in questions_to_insert:
-            db.refresh(q)
         logger.info("Successfully batch generated and committed %d questions for domain=%s", len(questions_to_insert), domain)
         return questions_to_insert
     except Exception as exc:
