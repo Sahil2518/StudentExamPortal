@@ -221,3 +221,54 @@ def test_email_alias_canonicalization_flow(monkeypatch):
     assert login_resp.status_code == 200
     assert login_resp.json()["user"]["email"] == canonical_email
 
+
+# -------------------------------------------------------------------
+# Google Single Sign-On (OAuth2)
+# -------------------------------------------------------------------
+
+def test_google_auth_new_user_registration():
+    """A new candidate can register & sign in via Google SSO with one click."""
+    email = make_test_email("google_new")
+    resp = client.post("/auth/google", json={
+        "email": email,
+        "name": "Google Candidate",
+        "google_id": "google_12345678"
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["user"]["email"] == email
+    assert data["user"]["name"] == "Google Candidate"
+    assert data["user"]["role"] == "student"
+
+
+def test_google_auth_existing_user_login():
+    """An existing registered user can sign in with Google SSO."""
+    email = make_test_email("google_exist")
+    # First create via regular registration
+    client.post("/register", json={"name": "Regular User", "email": email, "password": "Password123!"})
+
+    # Now sign in with Google SSO
+    resp = client.post("/auth/google", json={
+        "email": email,
+        "name": "Regular User",
+        "google_id": "google_87654321"
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user"]["email"] == email
+
+
+def test_google_auth_alias_canonicalization():
+    """Signing in with Google using alias email maps to canonical account."""
+    resp = client.post("/auth/google", json={
+        "email": "sahil47947@gmail.com",
+        "name": "Sahil",
+        "google_id": "google_sahil_alias"
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user"]["email"] == "sahilagarwal1691@gmail.com"
+
+

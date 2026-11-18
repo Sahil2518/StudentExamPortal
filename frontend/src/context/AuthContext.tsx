@@ -19,11 +19,20 @@ export interface User {
   role: 'student' | 'admin' | 'reviewer'
 }
 
+export interface GoogleAuthPayload {
+  email: string
+  name: string
+  google_id?: string
+  avatar_url?: string
+  id_token?: string
+}
+
 interface AuthContextValue {
   user: User | null
   token: string | null
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithGoogle: (payload: GoogleAuthPayload) => Promise<void>
   logout: () => void
   isAdmin: () => boolean
   isReviewer: () => boolean
@@ -64,6 +73,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(userData)
   }, [])
 
+  /**
+   * loginWithGoogle: authenticates or registers user via Google SSO.
+   * Stores returned JWT token and user in localStorage.
+   */
+  const loginWithGoogle = useCallback(async (payload: GoogleAuthPayload) => {
+    const response = await client.post('/auth/google', payload)
+    const { access_token, user: returnedUser } = response.data
+
+    localStorage.setItem('token', access_token)
+    setToken(access_token)
+
+    let userData: User
+    if (returnedUser) {
+      userData = returnedUser as User
+    } else {
+      const meResponse = await client.get('/me')
+      userData = meResponse.data
+    }
+
+    localStorage.setItem('user', JSON.stringify(userData))
+    setUser(userData)
+  }, [])
+
   const logout = useCallback(() => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -82,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isAuthenticated: !!token && !!user,
         login,
+        loginWithGoogle,
         logout,
         isAdmin,
         isReviewer,

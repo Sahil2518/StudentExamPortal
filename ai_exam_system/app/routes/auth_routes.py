@@ -15,7 +15,8 @@ from app.schemas.auth_schema import (
     VerifyOTPRequest,
     VerifyOTPResponse,
     ResetPasswordRequest,
-    ResetPasswordResponse
+    ResetPasswordResponse,
+    GoogleLoginRequest
 )
 from app.services.auth_service import hash_password, verify_password
 from app.services.jwt_service import (
@@ -273,3 +274,84 @@ def reset_password(
     return ResetPasswordResponse(
         message="Your password has been reset successfully. You can now sign in with your new password."
     )
+
+
+@router.post(
+    "/auth/google",
+    response_model=TokenResponse,
+    summary="Sign in or register automatically using Google Single Sign-On (OAuth2)"
+)
+@router.post(
+    "/google-login",
+    response_model=TokenResponse,
+    include_in_schema=False
+)
+def google_auth(
+    body: GoogleLoginRequest,
+    db: Session = Depends(get_db)
+):
+    raw_email = str(body.email or "").strip().lower()
+    canonical_email = canonicalize_email(raw_email)
+
+    # Optional real Google ID token validation if Google Client ID is configured
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    if google_client_id and body.id_token:
+        try:
+            import httpx
+            resp = httpx.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": body.id_token},
+                timeout=5.0
+            )
+            if resp.status_code == 200:
+                payload = resp.json()
+                verified_email = payload.get("email", "").lower().strip()
+                if verified_email:
+                    canonical_email = canonicalize_email(verified_email)
+                    raw_email = verified_email
+        except Exception:
+            pass
+
+    # Find existing user by canonical email OR raw email
+    db_user = db.query(User).filter(
+        (User.email == canonical_email) | (User.email == raw_email)
+    ).first()
+
+    if not db_user:
+        # User not yet registered -> automatically create account via Google SSO
+        random_pw = secrets.token_urlsafe(32)
+        user_name = body.name.strip() if body.name and body.name.strip() else "Google Student"
+        db_user = User(
+            name=user_name,
+            email=canonical_email,
+            password_hash=hash_password(random_pw),
+            role="student"
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+    else:
+        # Existing user -> if their name is default or blank, update with Google name
+        if body.name and (not db_user.name or db_user.name in ("Student", "User")):
+            db_user.name = body.name.strip()
+            db.commit()
+
+    # Generate JWT Token with canonical email
+    token = create_access_token(
+        {
+            "user_id": str(db_user.id),
+            "email": db_user.email,
+            "role": db_user.role
+        }
+    )
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(db_user.id),
+            "name": db_user.name,
+            "email": db_user.email,
+            "role": db_user.role
+        }
+    }

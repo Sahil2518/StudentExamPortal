@@ -43,3 +43,11 @@ class ResetPasswordRequest(BaseModel):
 
 class ResetPasswordResponse(BaseModel):
     message: str
+
+
+class GoogleLoginRequest(BaseModel):
+    email: EmailStr = Field(..., description="Google account email address")
+    name: str = Field(default="Google User", description="Display name from Google profile")
+    google_id: Optional[str] = Field(default=None, description="Google OAuth unique subject ID")
+    avatar_url: Optional[str] = Field(default=None, description="Profile picture URL")
+    id_token: Optional[str] = Field(default=None, description="Google ID Token from Google Identity Services")
