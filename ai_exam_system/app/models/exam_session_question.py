@@ -14,7 +14,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.base import Base
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Text, UniqueConstraint, Boolean
+from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Text, UniqueConstraint, Boolean, Index
 
 class ExamSessionQuestion(Base):
     __tablename__ = "exam_session_questions"
@@ -22,6 +22,7 @@ class ExamSessionQuestion(Base):
     __table_args__ = (
         UniqueConstraint('exam_session_id', 'question_id', name='uq_session_question'),
         UniqueConstraint('exam_session_id', 'sequence_number', name='uq_session_sequence'),
+        Index('ix_session_questions_seq', 'exam_session_id', 'sequence_number'),
     )
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

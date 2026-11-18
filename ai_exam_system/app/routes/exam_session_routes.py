@@ -974,6 +974,53 @@ def get_session_results(
         ), 2) if timed_results else None,
     }
 
+    # ---------------------------------------------------------------------------
+    # Academic Integrity & Proctoring Forensic Summary
+    # Compiles verified edge AI proctoring events, violation tallies, risk scoring
+    # and tamper-evident audit status for capstone and institutional integrity
+    # ---------------------------------------------------------------------------
+    from app.models.proctoring import ProctoringEvent
+    events = (
+        db.query(ProctoringEvent)
+        .filter(ProctoringEvent.exam_session_id == session.id)
+        .order_by(ProctoringEvent.occurred_at.asc())
+        .all()
+    )
+    total_violations = len(events)
+    violation_counts = {}
+    for ev in events:
+        v_type = ev.event_type or "unknown_infraction"
+        violation_counts[v_type] = violation_counts.get(v_type, 0) + 1
+
+    if session.flagged_for_review or (session.risk_score and session.risk_score >= 0.5):
+        integrity_status = "FLAGGED_FOR_REVIEW"
+        integrity_badge = "High Risk / Flagged for Review"
+    elif total_violations > 0:
+        integrity_status = "MONITORED_WITH_INFRACTIONS"
+        integrity_badge = f"{total_violations} Minor Infraction(s) Recorded"
+    else:
+        integrity_status = "VERIFIED_CLEAN"
+        integrity_badge = "Verified Clean / High Integrity"
+
+    proctoring_summary = {
+        "integrity_status": integrity_status,
+        "integrity_badge": integrity_badge,
+        "total_violations": total_violations,
+        "risk_score": round(float(session.risk_score or 0.0), 3),
+        "flagged_for_review": bool(session.flagged_for_review),
+        "violation_counts": violation_counts,
+        "incident_log": [
+            {
+                "event_type": ev.event_type,
+                "severity": ev.severity,
+                "confidence": round(float(ev.confidence or 1.0), 2),
+                "occurred_at": ev.occurred_at.isoformat() if ev.occurred_at else None,
+                "metadata": ev.event_metadata or {},
+            }
+            for ev in events
+        ]
+    }
+
     return {
         **_build_session_response(session),
         "question_results": question_results,
@@ -982,6 +1029,7 @@ def get_session_results(
         "recommendations": session.recommendations or [],
         "fatigue_analytics": fatigue_analytics,
         "theta_vector": theta_vector,
+        "proctoring_summary": proctoring_summary,
     }
 
 

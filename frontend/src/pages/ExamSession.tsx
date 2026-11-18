@@ -110,6 +110,7 @@ export default function ExamSession() {
   const [showSubmitModal, setShowSubmitModal] = useState(false)
   const [showRulesModal, setShowRulesModal] = useState(false)
   const [savingAnswer, setSavingAnswer] = useState(false)
+  const [networkRetrying, setNetworkRetrying] = useState(false)
 
   // Adaptive Practice State
   const [adaptiveQuestion, setAdaptiveQuestion] = useState<AdaptiveQuestion | null>(null)
@@ -456,6 +457,36 @@ export default function ExamSession() {
   }, [loadSession, loadPalette, loadLiveQuestion, loadNextAdaptiveQuestion])
 
   // =========================================================================
+  // =========================================================================
+  // RESILIENT NETWORK SUBMISSION HELPER (AUTO-RETRY ON JITTER)
+  // =========================================================================
+  const postWithNetworkRetry = async <T,>(url: string, payload: unknown, maxRetries = 3): Promise<T> => {
+    let attempt = 0
+    while (attempt < maxRetries) {
+      try {
+        const res = await client.post<T>(url, payload)
+        setNetworkRetrying(false)
+        return res.data
+      } catch (err: unknown) {
+        attempt++
+        const axiosErr = err as { response?: { status?: number } }
+        // For client-side logic error status codes (e.g. 400, 403, 404, 409, 410), do not retry
+        if (axiosErr.response && axiosErr.response.status && axiosErr.response.status < 500) {
+          setNetworkRetrying(false)
+          throw err
+        }
+        if (attempt >= maxRetries) {
+          setNetworkRetrying(false)
+          throw err
+        }
+        setNetworkRetrying(true)
+        await new Promise((r) => setTimeout(r, 600 * Math.pow(2, attempt - 1)))
+      }
+    }
+    throw new Error('Network request failed after retries')
+  }
+
+  // =========================================================================
   // LIVE EXAM HANDLERS
   // =========================================================================
   const handleSaveAndNext = async (markForReview = false) => {
@@ -471,7 +502,7 @@ export default function ExamSession() {
     }
 
     try {
-      await client.post(`/exam-sessions/${session.id}/live-answer`, {
+      await postWithNetworkRetry(`/exam-sessions/${session.id}/live-answer`, {
         question_id: liveQuestion.question_id,
         selected_option: selectedLiveOption,
         review_status: reviewStatus,
@@ -494,6 +525,7 @@ export default function ExamSession() {
       alert(axiosErr.response?.data?.detail || 'Failed to save answer')
     } finally {
       setSavingAnswer(false)
+      setNetworkRetrying(false)
     }
   }
 
@@ -501,7 +533,7 @@ export default function ExamSession() {
     if (!liveQuestion || !session || savingAnswer) return
     setSavingAnswer(true)
     try {
-      await client.post(`/exam-sessions/${session.id}/live-answer`, {
+      await postWithNetworkRetry(`/exam-sessions/${session.id}/live-answer`, {
         question_id: liveQuestion.question_id,
         selected_option: null,
         review_status: 'not_answered'
@@ -518,6 +550,7 @@ export default function ExamSession() {
       alert('Failed to clear response')
     } finally {
       setSavingAnswer(false)
+      setNetworkRetrying(false)
     }
   }
 
@@ -531,7 +564,7 @@ export default function ExamSession() {
       }
     }
     if (liveQuestion && selectedLiveOption !== liveQuestion.selected_option) {
-      await client.post(`/exam-sessions/${sessionId}/live-answer`, {
+      await postWithNetworkRetry(`/exam-sessions/${sessionId}/live-answer`, {
         question_id: liveQuestion.question_id,
         selected_option: selectedLiveOption,
         review_status: selectedLiveOption ? 'answered' : 'not_answered'
@@ -550,13 +583,13 @@ export default function ExamSession() {
     const timeTaken = Math.round((Date.now() - questionStartRef.current) / 1000)
 
     try {
-      const res = await client.post('/question-attempts', {
+      const res = await postWithNetworkRetry<AttemptResult>('/question-attempts', {
         question_id: adaptiveQuestion.question_id,
         selected_answer: optionKey,
         time_taken: timeTaken,
         exam_session_id: session.id,
       })
-      setAttemptResult(res.data as AttemptResult)
+      setAttemptResult(res)
       setAnsweredCount((c) => c + 1)
       setPhase('feedback')
     } catch (err: unknown) {
@@ -565,6 +598,7 @@ export default function ExamSession() {
       setPhase('error')
     } finally {
       setSubmittingAdaptive(false)
+      setNetworkRetrying(false)
     }
   }
 
@@ -864,6 +898,14 @@ export default function ExamSession() {
               {faceStatus === 'multiple_faces' && `🚫 ${faceCount} Faces!`}
               {faceStatus === 'error' && '⚠️ Camera Error'}
             </div>
+
+            {/* Network Auto-Save & Reconnect Status */}
+            {networkRetrying && (
+              <div className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border bg-amber-50 text-amber-700 border-amber-300 animate-pulse font-medium">
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                Auto-saving...
+              </div>
+            )}
             <video
               ref={videoRef}
               autoPlay
@@ -1164,6 +1206,12 @@ export default function ExamSession() {
           {violations > 0 && (
             <span className="text-xs text-red-600 font-bold bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
               ⚠️ {violations}/{MAX_VIOLATIONS} violations
+            </span>
+          )}
+          {networkRetrying && (
+            <span className="text-xs text-amber-700 font-medium bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              Auto-saving...
             </span>
           )}
         </div>

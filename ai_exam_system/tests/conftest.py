@@ -22,6 +22,7 @@ SQLALCHEMY_TEST_URL = f"sqlite:///{temp_db_path}"
 # Override DATABASE_URL so app.database.connection and lifespan use the test SQLite DB
 os.environ["DATABASE_URL"] = SQLALCHEMY_TEST_URL
 os.environ["ENVIRONMENT"] = "development"
+os.environ["TESTING"] = "true"
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

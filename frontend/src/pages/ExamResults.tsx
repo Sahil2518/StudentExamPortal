@@ -85,6 +85,24 @@ interface Scorecard {
   total_questions: number
 }
 
+interface ProctoringIncident {
+  event_type: string
+  severity: string
+  confidence: number
+  occurred_at: string | null
+  metadata?: Record<string, unknown>
+}
+
+interface ProctoringSummary {
+  integrity_status: 'VERIFIED_CLEAN' | 'MONITORED_WITH_INFRACTIONS' | 'FLAGGED_FOR_REVIEW'
+  integrity_badge: string
+  total_violations: number
+  risk_score: number
+  flagged_for_review: boolean
+  violation_counts: Record<string, number>
+  incident_log: ProctoringIncident[]
+}
+
 interface ResultsData {
   id: string
   domain: string
@@ -103,6 +121,7 @@ interface ResultsData {
   recommendations: Array<string | { skill?: string; suggestion?: string; priority?: number; [key: string]: unknown }>
   fatigue_analytics?: FatigueAnalytics
   theta_vector?: ThetaVector
+  proctoring_summary?: ProctoringSummary
 }
 
 export default function ExamResults() {
@@ -111,6 +130,7 @@ export default function ExamResults() {
   const [data, setData] = useState<ResultsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showIncidentLog, setShowIncidentLog] = useState(false)
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -409,6 +429,154 @@ export default function ExamResults() {
           {data.fatigue_analytics.total_exam_time_seconds != null && (
             <div className="text-xs text-gray-500 text-right">
               Total tracked time: <strong>{Math.round(data.fatigue_analytics.total_exam_time_seconds / 60)} min {data.fatigue_analytics.total_exam_time_seconds % 60}s</strong>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Academic Integrity & Proctoring Forensic Audit */}
+      {data.proctoring_summary && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🛡️</span>
+              <div>
+                <h2 className="text-sm font-bold text-gray-900">Academic Integrity & Proctoring Audit</h2>
+                <p className="text-xs text-gray-500">Edge WebGL Neural Proctoring • Cryptographic Audit Trail</p>
+              </div>
+            </div>
+            <span
+              className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                data.proctoring_summary.integrity_status === 'VERIFIED_CLEAN'
+                  ? 'bg-green-50 border-green-300 text-green-700'
+                  : data.proctoring_summary.integrity_status === 'MONITORED_WITH_INFRACTIONS'
+                  ? 'bg-amber-50 border-amber-300 text-amber-700'
+                  : 'bg-red-50 border-red-300 text-red-700'
+              }`}
+            >
+              {data.proctoring_summary.integrity_badge}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+              <div className="text-xs text-gray-500">Integrity Risk Score</div>
+              <div
+                className={`text-lg font-bold mt-0.5 ${
+                  data.proctoring_summary.risk_score < 0.2
+                    ? 'text-green-600'
+                    : data.proctoring_summary.risk_score < 0.5
+                    ? 'text-amber-600'
+                    : 'text-red-600'
+                }`}
+              >
+                {(data.proctoring_summary.risk_score * 100).toFixed(1)}%
+              </div>
+              <div className="text-[10px] text-gray-400">0.0% is optimal</div>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+              <div className="text-xs text-gray-500">Logged Infractions</div>
+              <div className="text-lg font-bold text-gray-800 mt-0.5">
+                {data.proctoring_summary.total_violations} <span className="text-xs font-normal text-gray-500">/ 5 max</span>
+              </div>
+              <div className="text-[10px] text-gray-400">Threshold: 5 auto-submit</div>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+              <div className="text-xs text-gray-500">Human Review Status</div>
+              <div className="text-sm font-semibold text-gray-800 mt-1">
+                {data.proctoring_summary.flagged_for_review ? (
+                  <span className="text-red-600">Pending Review</span>
+                ) : (
+                  <span className="text-green-600">No Action Required</span>
+                )}
+              </div>
+              <div className="text-[10px] text-gray-400">Institutional Audit</div>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+              <div className="text-xs text-gray-500">AI Computer Vision</div>
+              <div className="text-sm font-semibold text-indigo-700 mt-1">
+                TinyFace WebGL
+              </div>
+              <div className="text-[10px] text-gray-400">Client-Side Edge Inference</div>
+            </div>
+          </div>
+
+          {data.proctoring_summary.total_violations === 0 ? (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-3">
+              <span className="text-green-600 text-lg">✓</span>
+              <p className="text-xs text-green-800">
+                <strong>Flawless Session Integrity:</strong> No tab switches, window un-focusing, or facial occlusions detected throughout this exam session.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-gray-600">Infraction Breakdown:</span>
+                {Object.entries(data.proctoring_summary.violation_counts).map(([type, count]) => (
+                  <span
+                    key={type}
+                    className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-mono font-medium"
+                  >
+                    {type.replace(/_/g, ' ')}: {count}
+                  </span>
+                ))}
+              </div>
+
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowIncidentLog((prev) => !prev)}
+                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                >
+                  {showIncidentLog ? 'Hide Incident Timestamp Log ▲' : `View Incident Forensic Timeline (${data.proctoring_summary.incident_log.length} events) ▼`}
+                </button>
+
+                {showIncidentLog && (
+                  <div className="mt-2 overflow-x-auto border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                    <table className="min-w-full text-xs divide-y divide-gray-200">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-gray-500 font-medium">Timestamp</th>
+                          <th className="px-3 py-2 text-left text-gray-500 font-medium">Event Type</th>
+                          <th className="px-3 py-2 text-left text-gray-500 font-medium">Severity</th>
+                          <th className="px-3 py-2 text-left text-gray-500 font-medium">Confidence</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {data.proctoring_summary.incident_log.map((inc, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-3 py-1.5 text-gray-600 font-mono">
+                              {inc.occurred_at ? new Date(inc.occurred_at).toLocaleTimeString() : 'N/A'}
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-800 font-medium">
+                              {inc.event_type.replace(/_/g, ' ')}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                  inc.severity === 'high'
+                                    ? 'bg-red-100 text-red-700'
+                                    : inc.severity === 'medium'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-gray-100 text-gray-600'
+                                }`}
+                              >
+                                {inc.severity}
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-500 font-mono">
+                              {(inc.confidence * 100).toFixed(0)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

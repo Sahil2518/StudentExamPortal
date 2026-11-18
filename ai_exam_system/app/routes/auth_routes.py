@@ -1,6 +1,6 @@
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -115,6 +115,31 @@ def forgot_password(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account registered with this email address."
         )
+
+    # 60-second cooldown rate-limiting to prevent OTP flooding/spamming
+    # Bypass cooldown only if explicitly in automated testing environment (os.getenv("TESTING") == "true")
+    if os.getenv("TESTING") != "true":
+        recent_otp = (
+            db.query(PasswordResetOTP)
+            .filter(
+                (PasswordResetOTP.email == clean_email) | (PasswordResetOTP.user_id == user.id)
+            )
+            .order_by(PasswordResetOTP.created_at.desc())
+            .first()
+        )
+        if recent_otp and recent_otp.created_at:
+            created_at = recent_otp.created_at
+            if created_at.tzinfo is None:
+                elapsed_sec = (datetime.utcnow() - created_at).total_seconds()
+            else:
+                elapsed_sec = (datetime.now(timezone.utc) - created_at).total_seconds()
+
+            if 0 <= elapsed_sec < 60:
+                retry_after = max(1, int(60 - elapsed_sec))
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Verification code recently requested. Please wait {retry_after} seconds before requesting a new code."
+                )
 
     # Invalidate any previously issued, active OTPs for this user
     db.query(PasswordResetOTP).filter(

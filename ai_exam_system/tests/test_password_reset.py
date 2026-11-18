@@ -120,3 +120,28 @@ def test_full_otp_and_password_reset_flow():
     })
     assert new_login_resp.status_code == 200
     assert "access_token" in new_login_resp.json()
+
+
+def test_forgot_password_rate_limit_cooldown():
+    """Requesting OTP twice within 60 seconds triggers HTTP 429 Too Many Requests."""
+    email = make_test_email("cooldown_user")
+    reg_resp = client.post("/register", json={
+        "name": "Cooldown Test User",
+        "email": email,
+        "password": "Password123!"
+    })
+    assert reg_resp.status_code in (200, 201)
+
+    # Temporarily disable TESTING bypass to enforce rate limit
+    os.environ["TESTING"] = "false"
+    try:
+        # First request succeeds
+        resp1 = client.post("/forgot-password", json={"email": email})
+        assert resp1.status_code == 200
+
+        # Immediate second request fails with HTTP 429
+        resp2 = client.post("/forgot-password", json={"email": email})
+        assert resp2.status_code == 429
+        assert "wait" in resp2.json()["detail"].lower()
+    finally:
+        os.environ["TESTING"] = "true"

@@ -9,7 +9,8 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
-    Text
+    Text,
+    Index
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -28,6 +29,11 @@ class ExamSession(Base):
     """
 
     __tablename__ = "exam_sessions"
+
+    __table_args__ = (
+        Index("ix_exam_sessions_user_started", "user_id", "started_at"),
+        Index("ix_exam_sessions_domain_status", "domain", "status"),
+    )
 
     # Unique session identifier
     id = Column(
