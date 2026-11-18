@@ -175,7 +175,7 @@ export default function ExamSetup() {
         positive_mark: positiveMark,
         negative_mark: negativeMark,
         exam_paper_title: examTitle,
-        time_limit_seconds: examType === 'live' ? timeLimitMinutes * 60 : undefined,
+        time_limit_seconds: (timeLimitMinutes && timeLimitMinutes > 0 ? timeLimitMinutes : 60) * 60,
       })
       const session = res.data
       navigate(`/exam/session/${session.id}`)

@@ -197,13 +197,16 @@ export default function ExamSession() {
   }, [examTerminated, session, finishSession])
 
   // =========================================================================
-  // TIMER — Initialize once session loads
+  // TIMER — Initialize once session loads (always runs, with sensible fallback)
   // =========================================================================
   useEffect(() => {
     if (!session || phase !== 'question' || timerStartedRef.current) return
-    if (!session.time_limit_seconds) return
+    const limit = session.time_limit_seconds && session.time_limit_seconds > 0
+      ? session.time_limit_seconds
+      : (session.max_questions ? session.max_questions * 120 : 3600)
+
     timerStartedRef.current = true
-    setTimeLeft(session.time_limit_seconds)
+    setTimeLeft(limit)
 
     timerIntervalRef.current = setInterval(() => {
       setTimeLeft((prev) => {
