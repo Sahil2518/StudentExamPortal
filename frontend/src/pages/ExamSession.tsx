@@ -32,6 +32,7 @@ interface SessionDetail {
   skill?: string
   max_questions: number
   time_limit_seconds?: number
+  started_at?: string
   status: string
   exam_type: 'live' | 'practice'
   positive_mark: number
@@ -78,11 +79,17 @@ type Phase = 'loading' | 'question' | 'feedback' | 'finishing' | 'error'
 
 const MAX_VIOLATIONS = 3
 
-/** Format seconds as MM:SS */
+/** Format seconds as HH:MM:SS or MM:SS */
 function formatTime(secs: number): string {
-  const m = Math.floor(secs / 60)
+  if (secs <= 0) return '00:00:00'
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
   const s = secs % 60
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (h > 0) {
+    return `${pad(h)}:${pad(m)}:${pad(s)}`
+  }
+  return `${pad(m)}:${pad(s)}`
 }
 
 export default function ExamSession() {
@@ -117,6 +124,7 @@ export default function ExamSession() {
   // TIMER STATE
   // =========================================================================
   const [timeLeft, setTimeLeft] = useState<number | null>(null)
+  const [timeExpired, setTimeExpired] = useState(false)
   const timerStartedRef = useRef(false)
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const finishingRef = useRef(false) // prevent double-finish
@@ -198,7 +206,7 @@ export default function ExamSession() {
   }, [examTerminated, session, finishSession])
 
   // =========================================================================
-  // TIMER — Initialize once session loads (always runs, with sensible fallback)
+  // TIMER — Initialize once session loads (real elapsed time calculation)
   // =========================================================================
   useEffect(() => {
     if (!session || phase !== 'question' || timerStartedRef.current) return
@@ -206,8 +214,26 @@ export default function ExamSession() {
       ? session.time_limit_seconds
       : (session.max_questions ? session.max_questions * 120 : 3600)
 
+    // Calculate elapsed time from server started_at if available
+    let initialRemaining = limit
+    if (session.started_at) {
+      const startedMs = new Date(session.started_at).getTime()
+      if (!isNaN(startedMs)) {
+        const elapsedSec = Math.floor((Date.now() - startedMs) / 1000)
+        if (elapsedSec > 0) {
+          initialRemaining = Math.max(0, limit - elapsedSec)
+        }
+      }
+    }
+
     timerStartedRef.current = true
-    setTimeLeft(limit)
+    setTimeLeft(initialRemaining)
+
+    if (initialRemaining <= 0) {
+      setTimeExpired(true)
+      finishSession()
+      return
+    }
 
     timerIntervalRef.current = setInterval(() => {
       setTimeLeft((prev) => {
@@ -223,12 +249,16 @@ export default function ExamSession() {
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
     }
-  }, [session, phase])
+  }, [session, phase, finishSession])
 
   // Auto-submit when timer hits 0
   useEffect(() => {
-    if (timeLeft === 0 && session && phase === 'question') {
-      finishSession()
+    if (timeLeft === 0 && session && phase === 'question' && !finishingRef.current) {
+      setTimeExpired(true)
+      const t = setTimeout(() => {
+        finishSession()
+      }, 1500)
+      return () => clearTimeout(t)
     }
   }, [timeLeft, session, phase, finishSession])
 
@@ -608,6 +638,27 @@ export default function ExamSession() {
   }
 
   // =========================================================================
+  // RENDER: TIME EXPIRED AUTO-SUBMISSION SCREEN
+  // =========================================================================
+  if (timeExpired) {
+    return (
+      <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center text-white z-50 p-6 select-none">
+        <div className="text-center space-y-4 max-w-md bg-white/10 p-8 rounded-2xl border border-white/20 shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="text-6xl animate-bounce">⏰</div>
+          <h1 className="text-2xl font-black text-white">Time Has Expired!</h1>
+          <p className="text-sm text-slate-200 leading-relaxed">
+            The examination duration has ended. Your answers are being automatically locked and submitted.
+          </p>
+          <div className="flex items-center justify-center gap-2 pt-2 text-indigo-300 text-xs font-semibold">
+            <Spinner size="sm" />
+            <span>Calculating final scores &amp; generating scorecard...</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // =========================================================================
   // RENDER: EXAM TERMINATED
   // =========================================================================
   if (examTerminated) {
@@ -742,8 +793,8 @@ export default function ExamSession() {
         <ViolationModal />
         <RulesModal />
 
-        {/* Top Header Bar */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex flex-wrap justify-between items-center gap-3">
+        {/* Top Header Bar - Sticky in Fullscreen */}
+        <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border border-gray-200 rounded-lg p-4 shadow-md flex flex-wrap justify-between items-center gap-3">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-lg">🏛️</span>
@@ -767,14 +818,28 @@ export default function ExamSession() {
               </div>
             )}
 
-            {/* Countdown Timer */}
-            {timeLeft !== null && (
-              <div className={`flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg ${timerColor}`}>
-                <span className="text-sm">⏱</span>
-                <span className="text-base tabular-nums">{formatTime(timeLeft)}</span>
-                {timeLeft < 300 && <span className="text-xs">LEFT</span>}
+            {/* High-Visibility Live Exam Countdown Timer */}
+            <div className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border-2 font-mono shadow-xs transition-all ${
+              timeLeft === null
+                ? 'bg-gray-100 text-gray-500 border-gray-300'
+                : timeLeft <= 0
+                ? 'bg-red-600 text-white border-red-700 animate-bounce'
+                : timeLeft < 300
+                ? 'bg-red-50 text-red-600 border-red-400 animate-pulse font-bold'
+                : timeLeft < 600
+                ? 'bg-amber-50 text-amber-700 border-amber-300 font-bold'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
+            }`}>
+              <span className="text-base">⏱️</span>
+              <div className="leading-tight text-left">
+                <span className="text-[9px] uppercase font-bold tracking-wider block opacity-75">
+                  Time Left
+                </span>
+                <span className="text-base sm:text-lg font-extrabold tracking-wider tabular-nums">
+                  {timeLeft !== null ? formatTime(timeLeft) : '--:--:--'}
+                </span>
               </div>
-            )}
+            </div>
 
             {/* Webcam + status */}
             <div className="flex items-center text-xs text-green-700 bg-green-50 px-2.5 py-1 rounded-full border border-green-200">
@@ -1103,11 +1168,28 @@ export default function ExamSession() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          {timeLeft !== null && (
-            <div className={`flex items-center gap-1.5 bg-white border border-gray-200 px-3 py-1 rounded-lg text-sm tabular-nums ${timerColor}`}>
-              ⏱ {formatTime(timeLeft)}
+          {/* High-Visibility Adaptive Exam Countdown Timer */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-mono shadow-xs transition-all ${
+            timeLeft === null
+              ? 'bg-gray-100 text-gray-500 border-gray-300'
+              : timeLeft <= 0
+              ? 'bg-red-600 text-white border-red-700 animate-bounce'
+              : timeLeft < 300
+              ? 'bg-red-50 text-red-600 border-red-400 animate-pulse font-bold'
+              : timeLeft < 600
+              ? 'bg-amber-50 text-amber-700 border-amber-300 font-bold'
+              : 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
+          }`}>
+            <span className="text-sm">⏱️</span>
+            <div className="leading-tight text-left">
+              <span className="text-[9px] uppercase font-bold tracking-wider block opacity-75">
+                Time Left
+              </span>
+              <span className="text-sm font-extrabold tracking-wider tabular-nums">
+                {timeLeft !== null ? formatTime(timeLeft) : '--:--:--'}
+              </span>
             </div>
-          )}
+          </div>
           <button
             type="button"
             onClick={() => setShowRulesModal(true)}
