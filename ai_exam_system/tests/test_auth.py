@@ -184,3 +184,40 @@ def test_questions_list_does_not_expose_correct_answer_to_students():
     for q in data.get("questions", []):
         assert "correct_answer" not in q or q.get("correct_answer") is None, \
             f"Question {q.get('id')} exposed correct_answer to a student"
+
+
+# -------------------------------------------------------------------
+# Email alias unification
+# -------------------------------------------------------------------
+
+def test_configured_sahil_email_alias():
+    """Verify sahil47947@gmail.com canonicalizes directly to sahilagarwal1691@gmail.com."""
+    from app.services.email_service import canonicalize_email
+    assert canonicalize_email("sahil47947@gmail.com") == "sahilagarwal1691@gmail.com"
+    assert canonicalize_email("SAHIL47947@GMAIL.COM") == "sahilagarwal1691@gmail.com"
+    assert canonicalize_email("sahilagarwal1691@gmail.com") == "sahilagarwal1691@gmail.com"
+
+
+def test_email_alias_canonicalization_flow(monkeypatch):
+    """An email alias routes to the canonical account on login and blocks duplicate registration."""
+    import app.services.email_service as es
+    alias_email = make_test_email("alias_sub")
+    canonical_email = make_test_email("canonical_main")
+
+    # Register the canonical user
+    reg = client.post("/register", json={"name": "Alias Main", "email": canonical_email, "password": "Password123!"})
+    assert reg.status_code == 200
+
+    # Inject alias mapping
+    monkeypatch.setitem(es.EMAIL_ALIASES, alias_email, canonical_email)
+
+    # Registering with alias should be rejected with clear notice
+    dup_reg = client.post("/register", json={"name": "Alias Sub", "email": alias_email, "password": "Password123!"})
+    assert dup_reg.status_code == 400
+    assert "linked" in dup_reg.json()["detail"].lower()
+
+    # Logging in with alias should successfully authenticate and return canonical user
+    login_resp = client.post("/login", json={"email": alias_email, "password": "Password123!"})
+    assert login_resp.status_code == 200
+    assert login_resp.json()["user"]["email"] == canonical_email
+

@@ -5,7 +5,7 @@ from app.database.connection import get_db
 from app.models.user import User
 from app.schemas.user_schema import UserCreate, UserResponse
 from app.services.auth_service import hash_password
-from app.services.email_service import validate_candidate_email
+from app.services.email_service import validate_candidate_email, canonicalize_email, EMAIL_ALIASES
 
 from app.dependencies.current_user import get_current_user
 
@@ -22,12 +22,18 @@ def register_user(
 ):
     # Verify that the email actually exists, has valid DNS MX records, and is not disposable
     clean_email = validate_candidate_email(user.email)
+    canonical_email = canonicalize_email(clean_email)
 
     existing_user = db.query(User).filter(
-        User.email == clean_email
+        (User.email == canonical_email) | (User.email == clean_email)
     ).first()
 
     if existing_user:
+        if clean_email in EMAIL_ALIASES or clean_email != canonical_email:
+            raise HTTPException(
+                status_code=400,
+                detail=f"This email is linked to your existing account ({canonical_email}). Please sign in instead."
+            )
         raise HTTPException(
             status_code=400,
             detail="Email already registered"
@@ -39,7 +45,7 @@ def register_user(
 
     new_user = User(
         name=user.name.strip(),
-        email=clean_email,
+        email=canonical_email,
         password_hash=hashed_password
     )
 

@@ -92,6 +92,9 @@ export default function ForgotPassword() {
       const res = await client.post('/forgot-password', { email: cleanEmail })
       const data = res.data
       setInfoMessage(data.message || 'Verification code sent to your email.')
+      if (data.email) {
+        setEmail(data.email)
+      }
       if (data.dev_otp) {
         setDevOtpNotice(`Development Mode: Your verification code is ${data.dev_otp}`)
       }

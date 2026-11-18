@@ -96,12 +96,12 @@ export default function Register() {
         const status = axiosErr.response.status
         const detail = axiosErr.response.data?.detail
 
-        if (status === 400 && typeof detail === 'string' && detail.toLowerCase().includes('already registered')) {
-          setError('An account with this email address already exists. Please sign in instead.')
-        } else if (typeof detail === 'string') {
+        if (typeof detail === 'string') {
           setError(detail)
         } else if (Array.isArray(detail) && detail.length > 0) {
           setError(detail.map((d) => d.msg).join(', '))
+        } else if (status === 400) {
+          setError('An account with this email address already exists or the details are invalid. Please check and try again.')
         } else {
           setError('Registration failed. Please check your details and try again.')
         }

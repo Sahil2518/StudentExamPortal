@@ -24,6 +24,38 @@ DISPOSABLE_DOMAINS = {
     "temp-mail.org", "10minutesmail.com", "burnermail.io", "trashmail.net",
 }
 
+# ---------------------------------------------------------------------------
+# Known email aliases mapping alternate addresses to their canonical account email
+# ---------------------------------------------------------------------------
+def _load_email_aliases() -> Dict[str, str]:
+    import json
+    aliases = {
+        "sahil47947@gmail.com": "sahilagarwal1691@gmail.com",
+    }
+    env_aliases = os.getenv("EMAIL_ALIASES_JSON", "")
+    if env_aliases:
+        try:
+            extra = json.loads(env_aliases)
+            if isinstance(extra, dict):
+                for k, v in extra.items():
+                    aliases[str(k).strip().lower()] = str(v).strip().lower()
+        except Exception:
+            pass
+    return aliases
+
+EMAIL_ALIASES = _load_email_aliases()
+
+def canonicalize_email(raw_email: str) -> str:
+    """
+    Normalizes an email address and resolves known alias accounts to their single
+    canonical address.
+    For example:
+        sahil47947@gmail.com -> sahilagarwal1691@gmail.com
+    Ensures single profile, session records, and authentication across aliases.
+    """
+    clean = str(raw_email or "").strip().lower()
+    return EMAIL_ALIASES.get(clean, clean)
+
 def validate_candidate_email(raw_email: str) -> str:
     """
     Validates that an email actually exists:
