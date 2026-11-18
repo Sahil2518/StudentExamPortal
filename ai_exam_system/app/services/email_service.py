@@ -8,10 +8,52 @@ Dev mode: Logs OTP to console and returns dev_otp in response if neither configu
 """
 
 import os
+import sys
 import logging
 from typing import Dict, Any
+from fastapi import HTTPException
+from email_validator import validate_email, EmailNotValidError
 
 logger = logging.getLogger(__name__)
+
+# List of known temporary/disposable burner domains
+DISPOSABLE_DOMAINS = {
+    "mailinator.com", "tempmail.com", "10minutemail.com", "guerrillamail.com",
+    "throwawaymail.com", "yopmail.com", "sharklasers.com", "dispostable.com",
+    "trashmail.com", "getairmail.com", "mohmal.com", "fakeinbox.com",
+    "temp-mail.org", "10minutesmail.com", "burnermail.io", "trashmail.net",
+}
+
+def validate_candidate_email(raw_email: str) -> str:
+    """
+    Validates that an email actually exists:
+    1. Checks syntax according to RFC standards.
+    2. Blocks temporary / burner / disposable email domains.
+    3. Performs DNS MX lookup to ensure the domain actually exists and accepts email.
+    """
+    clean = str(raw_email or "").strip().lower()
+    if not clean or "@" not in clean:
+        raise HTTPException(status_code=400, detail="Invalid email address format. Please enter a valid email address.")
+
+    domain = clean.split("@")[-1]
+    if domain in DISPOSABLE_DOMAINS:
+        raise HTTPException(
+            status_code=400,
+            detail="Temporary and disposable email addresses are not allowed. Please enter your real, permanent email address."
+        )
+
+    # Allow mock domains in automated unit test environment
+    is_testing = "pytest" in sys.modules or os.getenv("ENVIRONMENT") == "testing"
+    check_dns = not (is_testing and domain in ("example.com", "test.com", "test.invalid"))
+
+    try:
+        validated = validate_email(clean, check_deliverability=check_dns)
+        return validated.normalized
+    except EmailNotValidError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid email address: {str(exc)}. Please verify your email and try again."
+        )
 
 # ---------------------------------------------------------------------------
 # Email HTML template

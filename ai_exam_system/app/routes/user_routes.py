@@ -5,6 +5,7 @@ from app.database.connection import get_db
 from app.models.user import User
 from app.schemas.user_schema import UserCreate, UserResponse
 from app.services.auth_service import hash_password
+from app.services.email_service import validate_candidate_email
 
 from app.dependencies.current_user import get_current_user
 
@@ -19,8 +20,9 @@ def register_user(
     user: UserCreate,
     db: Session = Depends(get_db)
 ):
+    # Verify that the email actually exists, has valid DNS MX records, and is not disposable
+    clean_email = validate_candidate_email(user.email)
 
-    clean_email = user.email.lower().strip()
     existing_user = db.query(User).filter(
         User.email == clean_email
     ).first()

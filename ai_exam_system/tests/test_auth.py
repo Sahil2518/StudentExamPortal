@@ -62,6 +62,27 @@ def test_register_duplicate_email_rejected():
     assert "already registered" in resp.json()["detail"].lower()
 
 
+def test_register_disposable_email_rejected():
+    """Registering with a disposable burner email domain returns 400."""
+    resp = client.post("/register", json={
+        "name": "Spam User",
+        "email": "candidate123@mailinator.com",
+        "password": "Pass123!Secure"
+    })
+    assert resp.status_code == 400
+    assert "disposable" in resp.json()["detail"].lower()
+
+
+def test_register_invalid_email_format_rejected():
+    """Registering with an invalid email syntax returns 400 or 422."""
+    resp = client.post("/register", json={
+        "name": "Bad Email User",
+        "email": "invalid..syntax@@not-an-email",
+        "password": "Pass123!Secure"
+    })
+    assert resp.status_code in (400, 422)
+
+
 # -------------------------------------------------------------------
 # Login
 # -------------------------------------------------------------------
