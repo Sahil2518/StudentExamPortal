@@ -20,8 +20,9 @@ def register_user(
     db: Session = Depends(get_db)
 ):
 
+    clean_email = user.email.lower().strip()
     existing_user = db.query(User).filter(
-        User.email == user.email
+        User.email == clean_email
     ).first()
 
     if existing_user:
@@ -35,8 +36,8 @@ def register_user(
     )
 
     new_user = User(
-        name=user.name,
-        email=user.email,
+        name=user.name.strip(),
+        email=clean_email,
         password_hash=hashed_password
     )
 

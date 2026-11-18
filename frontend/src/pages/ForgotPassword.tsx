@@ -83,11 +83,21 @@ export default function ForgotPassword() {
       setResendCooldown(60)
       setStep('VERIFY')
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } }
-      setError(
-        axiosErr.response?.data?.detail ||
-          'Failed to send verification code. Please ensure your email is registered.'
-      )
+      const axiosErr = err as {
+        response?: { data?: { detail?: string | Array<{ msg: string }> } }
+      }
+      if (!axiosErr.response) {
+        setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+      } else {
+        const detail = axiosErr.response.data?.detail
+        if (typeof detail === 'string') {
+          setError(detail)
+        } else if (Array.isArray(detail) && detail.length > 0) {
+          setError(detail.map((d) => d.msg).join(', '))
+        } else {
+          setError('Failed to send verification code. Please ensure your email is registered.')
+        }
+      }
     } finally {
       setLoading(false)
     }
@@ -143,8 +153,15 @@ export default function ForgotPassword() {
         setError('Verification succeeded but reset token was not received.')
       }
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } }
-      setError(axiosErr.response?.data?.detail || 'Invalid or expired verification code.')
+      const axiosErr = err as {
+        response?: { data?: { detail?: string | Array<{ msg: string }> } }
+      }
+      if (!axiosErr.response) {
+        setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+      } else {
+        const detail = axiosErr.response.data?.detail
+        setError(typeof detail === 'string' ? detail : 'Invalid or expired verification code.')
+      }
     } finally {
       setLoading(false)
     }
@@ -175,11 +192,19 @@ export default function ForgotPassword() {
       })
       setStep('SUCCESS')
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } }
-      setError(
-        axiosErr.response?.data?.detail ||
-          'Failed to reset password. The verification session may have expired.'
-      )
+      const axiosErr = err as {
+        response?: { data?: { detail?: string | Array<{ msg: string }> } }
+      }
+      if (!axiosErr.response) {
+        setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+      } else {
+        const detail = axiosErr.response.data?.detail
+        setError(
+          typeof detail === 'string'
+            ? detail
+            : 'Failed to reset password. The verification session may have expired.'
+        )
+      }
     } finally {
       setLoading(false)
     }

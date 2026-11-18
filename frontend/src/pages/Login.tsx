@@ -33,10 +33,15 @@ export default function Login() {
       await login(email.trim(), password)
       navigate('/dashboard', { replace: true })
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } }
-      setError(
-        axiosErr.response?.data?.detail || 'Login failed. Please check your credentials.'
-      )
+      const axiosErr = err as {
+        response?: { data?: { detail?: string | Array<{ msg: string }> } }
+      }
+      if (!axiosErr.response) {
+        setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+      } else {
+        const detail = axiosErr.response.data?.detail
+        setError(typeof detail === 'string' ? detail : 'Login failed. Please check your credentials.')
+      }
     } finally {
       setLoading(false)
     }

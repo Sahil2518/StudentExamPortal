@@ -42,10 +42,22 @@ export default function Register() {
       // Redirect to login after successful registration
       navigate('/login', { state: { registered: true } })
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } }
-      setError(
-        axiosErr.response?.data?.detail || 'Registration failed. Please try again.'
-      )
+      const axiosErr = err as {
+        response?: { data?: { detail?: string | Array<{ msg: string }> } }
+        message?: string
+      }
+      if (!axiosErr.response) {
+        setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+      } else {
+        const detail = axiosErr.response.data?.detail
+        if (typeof detail === 'string') {
+          setError(detail)
+        } else if (Array.isArray(detail) && detail.length > 0) {
+          setError(detail.map((d) => d.msg).join(', '))
+        } else {
+          setError('Registration failed. Please check your information and try again.')
+        }
+      }
     } finally {
       setLoading(false)
     }

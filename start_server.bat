@@ -26,6 +26,15 @@ echo.
 echo Press Ctrl+C to stop.
 echo.
 
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir "%PROJECT_DIR%"
+if exist "%PROJECT_DIR%\venv\Scripts\python.exe" (
+    echo Using project virtualenv: %PROJECT_DIR%\venv\Scripts\python.exe
+    "%PROJECT_DIR%\venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir "%PROJECT_DIR%"
+) else if exist "%~dp0venv\Scripts\python.exe" (
+    echo Using root virtualenv: %~dp0venv\Scripts\python.exe
+    "%~dp0venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir "%PROJECT_DIR%"
+) else (
+    echo Using system Python
+    python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --app-dir "%PROJECT_DIR%"
+)
 
 pause
