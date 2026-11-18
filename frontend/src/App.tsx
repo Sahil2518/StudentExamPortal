@@ -18,22 +18,32 @@
  * ProtectedLayout (outer) handles auth check and renders Layout + Outlet.
  * RoleGuard (inner) handles role-specific page restrictions.
  */
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import ProtectedLayout from './components/ProtectedLayout'
+import Spinner from './components/Spinner'
 
-import Login from './pages/Login'
-import Register from './pages/Register'
-import ForgotPassword from './pages/ForgotPassword'
-import Dashboard from './pages/Dashboard'
-import ExamSetup from './pages/ExamSetup'
-import ExamSession from './pages/ExamSession'
-import ExamResults from './pages/ExamResults'
-import History from './pages/History'
-import Profile from './pages/Profile'
-import AdminDashboard from './pages/AdminDashboard'
-import ReviewerDashboard from './pages/ReviewerDashboard'
+// Lazy load pages for fast initial page load and bundle splitting
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const ExamSetup = lazy(() => import('./pages/ExamSetup'))
+const ExamSession = lazy(() => import('./pages/ExamSession'))
+const ExamResults = lazy(() => import('./pages/ExamResults'))
+const History = lazy(() => import('./pages/History'))
+const Profile = lazy(() => import('./pages/Profile'))
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
+const ReviewerDashboard = lazy(() => import('./pages/ReviewerDashboard'))
+
+function PageFallback() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <Spinner size="lg" />
+    </div>
+  )
+}
 
 // ---- Role gate components ----
 
@@ -75,51 +85,53 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
 
-          {/* Root: redirect to dashboard */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            {/* Root: redirect to dashboard */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-          {/*
-           * Protected routes: ProtectedLayout checks isAuthenticated,
-           * redirects to /login if not, otherwise renders Layout (nav + Outlet).
-           */}
-          <Route element={<ProtectedLayout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/exam/setup" element={<ExamSetup />} />
-            <Route path="/exam/session/:sessionId" element={<ExamSession />} />
-            <Route path="/exam/results/:sessionId" element={<ExamResults />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/profile" element={<Profile />} />
+            {/*
+             * Protected routes: ProtectedLayout checks isAuthenticated,
+             * redirects to /login if not, otherwise renders Layout (nav + Outlet).
+             */}
+            <Route element={<ProtectedLayout />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/exam/setup" element={<ExamSetup />} />
+              <Route path="/exam/session/:sessionId" element={<ExamSession />} />
+              <Route path="/exam/results/:sessionId" element={<ExamResults />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/profile" element={<Profile />} />
 
-            {/* Admin-only page */}
-            <Route
-              path="/admin"
-              element={
-                <RequireAdmin>
-                  <AdminDashboard />
-                </RequireAdmin>
-              }
-            />
+              {/* Admin-only page */}
+              <Route
+                path="/admin"
+                element={
+                  <RequireAdmin>
+                    <AdminDashboard />
+                  </RequireAdmin>
+                }
+              />
 
-            {/* Reviewer (and admin) page */}
-            <Route
-              path="/reviewer"
-              element={
-                <RequireReviewer>
-                  <ReviewerDashboard />
-                </RequireReviewer>
-              }
-            />
-          </Route>
+              {/* Reviewer (and admin) page */}
+              <Route
+                path="/reviewer"
+                element={
+                  <RequireReviewer>
+                    <ReviewerDashboard />
+                  </RequireReviewer>
+                }
+              />
+            </Route>
 
-          {/* Catch-all fallback */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+            {/* Catch-all fallback */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   )

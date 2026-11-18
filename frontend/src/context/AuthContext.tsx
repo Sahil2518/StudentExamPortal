@@ -45,15 +45,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const login = useCallback(async (email: string, password: string) => {
     const response = await client.post('/login', { email, password })
-    const { access_token } = response.data
+    const { access_token, user: returnedUser } = response.data
 
-    // Store token first so the /me request includes it
+    // Store token first so subsequent requests include it
     localStorage.setItem('token', access_token)
     setToken(access_token)
 
-    // Fetch full user profile (includes role)
-    const meResponse = await client.get('/me')
-    const userData: User = meResponse.data
+    let userData: User
+    if (returnedUser) {
+      userData = returnedUser as User
+    } else {
+      // Fallback if backend does not supply user in token response
+      const meResponse = await client.get('/me')
+      userData = meResponse.data
+    }
 
     localStorage.setItem('user', JSON.stringify(userData))
     setUser(userData)
