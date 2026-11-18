@@ -122,6 +122,7 @@ allowed_origins = [o.strip() for o in env_origins.split(",") if o.strip()] if en
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

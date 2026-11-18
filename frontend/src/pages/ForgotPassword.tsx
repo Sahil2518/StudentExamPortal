@@ -87,7 +87,11 @@ export default function ForgotPassword() {
         response?: { data?: { detail?: string | Array<{ msg: string }> } }
       }
       if (!axiosErr.response) {
-        setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+          setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+        } else {
+          setError('Cannot connect to backend server. Render may be waking up from sleep (can take 50-60s) or VITE_API_URL is missing in Vercel.')
+        }
       } else {
         const detail = axiosErr.response.data?.detail
         if (typeof detail === 'string') {
@@ -157,7 +161,11 @@ export default function ForgotPassword() {
         response?: { data?: { detail?: string | Array<{ msg: string }> } }
       }
       if (!axiosErr.response) {
-        setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+          setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+        } else {
+          setError('Cannot connect to backend server. Render may be waking up from sleep (can take 50-60s) or VITE_API_URL is missing in Vercel.')
+        }
       } else {
         const detail = axiosErr.response.data?.detail
         setError(typeof detail === 'string' ? detail : 'Invalid or expired verification code.')
@@ -196,7 +204,11 @@ export default function ForgotPassword() {
         response?: { data?: { detail?: string | Array<{ msg: string }> } }
       }
       if (!axiosErr.response) {
-        setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+          setError('Cannot connect to backend server. Please verify start_server.bat is running.')
+        } else {
+          setError('Cannot connect to backend server. Render may be waking up from sleep (can take 50-60s) or VITE_API_URL is missing in Vercel.')
+        }
       } else {
         const detail = axiosErr.response.data?.detail
         setError(
