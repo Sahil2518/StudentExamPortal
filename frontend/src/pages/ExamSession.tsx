@@ -101,6 +101,7 @@ export default function ExamSession() {
   const [liveQuestion, setLiveQuestion] = useState<CurrentQuestion | null>(null)
   const [selectedLiveOption, setSelectedLiveOption] = useState<string | null>(null)
   const [showSubmitModal, setShowSubmitModal] = useState(false)
+  const [showRulesModal, setShowRulesModal] = useState(false)
   const [savingAnswer, setSavingAnswer] = useState(false)
 
   // Adaptive Practice State
@@ -685,6 +686,52 @@ export default function ExamSession() {
       </div>
     ) : null
 
+  const RulesModal = () =>
+    showRulesModal ? (
+      <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-xl max-w-xl w-full p-6 shadow-2xl border border-gray-200 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">📋</span>
+              <h3 className="text-base font-bold text-gray-900">Examination Instructions & Code of Conduct</h3>
+            </div>
+            <button
+              onClick={() => setShowRulesModal(false)}
+              className="text-gray-400 hover:text-gray-600 font-bold text-lg"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="space-y-3 text-xs text-gray-700 max-h-[60vh] overflow-y-auto">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg space-y-1">
+              <p className="font-bold text-red-900">🚨 Anti-Malpractice Rules (3-Strike Limit):</p>
+              <p>• Current strikes recorded: <strong className="text-red-700">{violations} / {MAX_VIOLATIONS}</strong></p>
+              <p>• Do not switch tabs, minimize, or exit fullscreen mode.</p>
+              <p>• Your webcam feed is actively analyzed: your face must remain visible at all times.</p>
+              <p>• No other person may be in camera view.</p>
+              <p>• Copying, pasting, right-click, screenshots, and devtools are permanently blocked.</p>
+            </div>
+
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg space-y-1">
+              <p className="font-bold text-indigo-900">⏱ Navigation & Scoring:</p>
+              <p>• Use the Question Palette to jump to any question.</p>
+              <p>• Use &quot;Save &amp; Next&quot; to confirm your answer.</p>
+              <p>• Marking scheme: +{session.positive_mark} for correct, -{session.negative_mark} for incorrect.</p>
+              <p>• Unanswered questions receive 0 marks.</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowRulesModal(false)}
+            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors"
+          >
+            Close &amp; Continue Exam
+          </button>
+        </div>
+      </div>
+    ) : null
+
   // =========================================================================
   // 1. LIVE ENTRANCE EXAM UI (JEE / NEET / CAT FORMAT)
   // =========================================================================
@@ -693,6 +740,7 @@ export default function ExamSession() {
       // select-none prevents text selection (screenshot prevention)
       <div className="max-w-7xl mx-auto space-y-4 select-none" onContextMenu={(e) => e.preventDefault()}>
         <ViolationModal />
+        <RulesModal />
 
         {/* Top Header Bar */}
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex flex-wrap justify-between items-center gap-3">
@@ -758,6 +806,13 @@ export default function ExamSession() {
               muted
               className="w-16 h-12 object-cover rounded border border-gray-300 shadow-sm"
             />
+            <button
+              type="button"
+              onClick={() => setShowRulesModal(true)}
+              className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs px-3 py-2 rounded transition-colors"
+            >
+              📋 Rules
+            </button>
             <button
               onClick={() => setShowSubmitModal(true)}
               className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2 rounded shadow transition-colors"
@@ -1013,6 +1068,7 @@ export default function ExamSession() {
   return (
     <div className="max-w-3xl mx-auto space-y-6 select-none" onContextMenu={(e) => e.preventDefault()}>
       <ViolationModal />
+      <RulesModal />
 
       {/* Proctoring camera feed */}
       <div className="flex justify-between items-center bg-gray-100 rounded-lg p-3">
@@ -1052,6 +1108,13 @@ export default function ExamSession() {
               ⏱ {formatTime(timeLeft)}
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setShowRulesModal(true)}
+            className="bg-white hover:bg-gray-50 text-indigo-700 border border-gray-300 font-bold text-xs px-2.5 py-1 rounded shadow-xs transition-colors"
+          >
+            📋 Rules
+          </button>
           <video
             ref={videoRef}
             autoPlay

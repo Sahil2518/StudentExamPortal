@@ -49,6 +49,8 @@ export default function ExamSetup() {
   const [maxQuestions, setMaxQuestions] = useState(75)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [showInstructionsModal, setShowInstructionsModal] = useState(false)
+  const [acceptedPolicy, setAcceptedPolicy] = useState(false)
 
   // Fetch questions from database to know what already exists
   useEffect(() => {
@@ -149,7 +151,7 @@ export default function ExamSetup() {
     return Math.round(maxQuestions * positiveMark * 100) / 100
   }, [testFormat, currentPreset, maxQuestions, positiveMark])
 
-  const handleStartExam = async (e: React.FormEvent) => {
+  const handleStartExam = (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitError(null)
 
@@ -158,7 +160,14 @@ export default function ExamSetup() {
       return
     }
 
+    setAcceptedPolicy(false)
+    setShowInstructionsModal(true)
+  }
+
+  const handleConfirmAndStart = async () => {
+    if (!acceptedPolicy || submitting) return
     setSubmitting(true)
+    setSubmitError(null)
     const examTitle =
       selectedExamId === 'custom'
         ? customExamTitle.trim() || `${domain} Custom Entrance Exam`
@@ -182,6 +191,7 @@ export default function ExamSetup() {
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } } }
       setSubmitError(axiosErr.response?.data?.detail || 'Failed to start exam session.')
+      setShowInstructionsModal(false)
     } finally {
       setSubmitting(false)
     }
@@ -711,16 +721,176 @@ export default function ExamSetup() {
           >
             {submitting ? (
               <span className="flex items-center justify-center gap-2">
-                <Spinner size="sm" /> Preparing Standardized Exam Paper...
+                <Spinner size="sm" /> Preparing Examination Paper...
               </span>
             ) : examType === 'live' ? (
-              `Start ${currentPreset?.shortCode || 'Live Entrance'} Exam (${maxQuestions} Questions • ${calculatedTotalMarks} Marks • ${timeLimitMinutes} Mins)`
+              `Review Instructions & Start ${currentPreset?.shortCode || 'Live Entrance'} Exam (${maxQuestions} Qs • ${calculatedTotalMarks} Marks)`
             ) : (
-              `Start AI Adaptive Practice Session (${maxQuestions} Questions • ${calculatedTotalMarks} Marks)`
+              `Review Instructions & Start AI Adaptive Practice (${maxQuestions} Qs • ${calculatedTotalMarks} Marks)`
             )}
           </button>
         </form>
       </div>
+
+      {/* =========================================================================
+          PRE-EXAM INSTRUCTIONS & ANTI-MALPRACTICE CONFIRMATION MODAL
+          ========================================================================= */}
+      {showInstructionsModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-gray-200 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-900 text-white p-6 relative">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-amber-400 text-slate-950 mb-2">
+                ⚠️ Mandatory Candidate Briefing
+              </div>
+              <h2 className="text-xl font-extrabold tracking-tight">
+                Pre-Examination Instructions & Anti-Malpractice Code
+              </h2>
+              <p className="text-xs text-indigo-200 mt-1">
+                Please review all examination constraints, proctoring policies, and code of conduct before starting.
+              </p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto text-xs text-gray-700">
+              {/* Exam Details Snapshot */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-indigo-900 block">Exam Subject</span>
+                  <span className="font-extrabold text-indigo-950 text-sm truncate block">{domain}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-indigo-900 block">Total Questions</span>
+                  <span className="font-extrabold text-indigo-950 text-sm block">{maxQuestions} Questions</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-indigo-900 block">Time Duration</span>
+                  <span className="font-extrabold text-indigo-950 text-sm block">{timeLimitMinutes} Minutes</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-indigo-900 block">Scoring Scheme</span>
+                  <span className="font-extrabold text-indigo-950 text-sm block text-green-700">
+                    +{positiveMark} <span className="text-red-600 font-semibold text-xs">/ -{negativeMark}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Strict Proctoring & Malpractice Warning */}
+              <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-red-900 font-bold text-sm">
+                  <span className="text-base">🚨</span>
+                  <span>Strict Anti-Malpractice & AI Proctoring Policy</span>
+                </div>
+                <p className="text-red-800 leading-relaxed text-[11px]">
+                  This exam is actively monitored using continuous AI facial detection and browser environment locks.
+                  <strong> Any candidate caught engaging in prohibited actions will receive immediate violations:</strong>
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px] text-red-900 font-medium">
+                  <div className="flex items-start gap-1.5">
+                    <span className="text-red-600 font-bold">•</span>
+                    <span><strong>Continuous Face Tracking:</strong> Your face must stay clearly centered in camera at all times.</span>
+                  </div>
+                  <div className="flex items-start gap-1.5">
+                    <span className="text-red-600 font-bold">•</span>
+                    <span><strong>Single Candidate Only:</strong> Presence of any secondary person triggers instant violation.</span>
+                  </div>
+                  <div className="flex items-start gap-1.5">
+                    <span className="text-red-600 font-bold">•</span>
+                    <span><strong>Locked Fullscreen:</strong> Pressing Esc or exiting full-screen mode counts as a violation.</span>
+                  </div>
+                  <div className="flex items-start gap-1.5">
+                    <span className="text-red-600 font-bold">•</span>
+                    <span><strong>No Tab / Window Switching:</strong> Leaving or minimizing the exam window is tracked.</span>
+                  </div>
+                  <div className="flex items-start gap-1.5">
+                    <span className="text-red-600 font-bold">•</span>
+                    <span><strong>Disabled Shortcuts:</strong> Copy/Paste, PrintScreen, DevTools (F12), and Right-Click are blocked.</span>
+                  </div>
+                  <div className="flex items-start gap-1.5 text-red-700">
+                    <span className="text-red-600 font-bold">•</span>
+                    <span><strong>3-Strike Rule:</strong> 3 recorded violations will <strong>terminate the exam automatically</strong>.</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Do's and Don'ts */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Do's */}
+                <div className="p-3.5 bg-green-50/70 border border-green-200 rounded-xl space-y-2">
+                  <div className="flex items-center gap-1.5 text-green-900 font-bold text-xs">
+                    <span className="text-green-600 text-sm">✅</span>
+                    <span>What to Do (Instructions)</span>
+                  </div>
+                  <ul className="space-y-1.5 text-[11px] text-green-950">
+                    <li>• Sit in a quiet, well-lit room facing your camera directly.</li>
+                    <li>• Allow webcam permissions when prompted by your browser.</li>
+                    <li>• Use the Question Palette to jump between questions freely.</li>
+                    <li>• Click <strong>Save & Next</strong> or <strong>Mark for Review</strong> to lock your choices.</li>
+                    <li>• Monitor the live timer at the top to manage your time.</li>
+                  </ul>
+                </div>
+
+                {/* Don'ts */}
+                <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
+                    <span className="text-amber-600 text-sm">❌</span>
+                    <span>What NOT to Do (Prohibitions)</span>
+                  </div>
+                  <ul className="space-y-1.5 text-[11px] text-amber-950">
+                    <li>• Do not press <kbd className="px-1 py-0.5 bg-white border rounded text-[10px]">Alt+Tab</kbd> or switch browser tabs.</li>
+                    <li>• Do not attempt screenshots (<kbd className="px-1 py-0.5 bg-white border rounded text-[10px]">PrintScreen</kbd>) or drag text.</li>
+                    <li>• Do not refresh (<kbd className="px-1 py-0.5 bg-white border rounded text-[10px]">F5</kbd>) or close the browser tab.</li>
+                    <li>• Do not cover, tilt, or obscure your webcam.</li>
+                    <li>• Do not allow anyone to speak to you or stand near your screen.</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Mandatory Candidate Affirmation */}
+              <div className="p-4 bg-slate-50 border border-slate-300 rounded-xl space-y-2">
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={acceptedPolicy}
+                    onChange={(e) => setAcceptedPolicy(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <span className="text-[11px] text-slate-800 leading-normal font-medium">
+                    I solemnly declare that I will take this examination honestly and independently. I have read and agree to all rules, time limits, and scoring terms. I acknowledge that my video is analyzed in real time for proctoring compliance and that <strong>reaching 3 violations will result in automatic exam disqualification</strong>.
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-gray-50 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowInstructionsModal(false)}
+                disabled={submitting}
+                className="px-4 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                ← Back & Edit Setup
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmAndStart}
+                disabled={!acceptedPolicy || submitting}
+                className="px-6 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg shadow-md transition-all flex items-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <Spinner size="sm" /> Initializing Exam & Fullscreen...
+                  </>
+                ) : (
+                  <>I Agree & Confirm — Enter Fullscreen & Begin Exam →</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
