@@ -25,6 +25,7 @@ import ProtectedLayout from './components/ProtectedLayout'
 
 import Login from './pages/Login'
 import Register from './pages/Register'
+import ForgotPassword from './pages/ForgotPassword'
 import Dashboard from './pages/Dashboard'
 import ExamSetup from './pages/ExamSetup'
 import ExamSession from './pages/ExamSession'
@@ -78,6 +79,7 @@ export default function App() {
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
 
           {/* Root: redirect to dashboard */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -73,3 +73,30 @@ def verify_token(token: str) -> dict:
         raise exc
 
     return payload
+
+
+def create_password_reset_token(email: str, expires_minutes: int = 15) -> str:
+    """
+    Create a short-lived cryptographically signed token specifically for password reset.
+    Only issued after successful OTP verification.
+    """
+    expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
+    payload = {
+        "sub": email.lower().strip(),
+        "purpose": "password_reset",
+        "exp": expire
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_password_reset_token(token: str) -> dict:
+    """
+    Validate a password reset token.
+    Ensures signature, expiry, and purpose == 'password_reset'.
+    """
+    payload = verify_token(token)
+    if payload.get("purpose") != "password_reset":
+        raise JWTError("Invalid token purpose; expected password_reset")
+    if not payload.get("sub"):
+        raise JWTError("Missing email identity in reset token")
+    return payload

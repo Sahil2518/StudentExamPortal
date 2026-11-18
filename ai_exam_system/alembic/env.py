@@ -29,6 +29,7 @@ from app.models.proctoring import ProctoringEvent, ReviewDecision
 from app.models.student_profile import StudentProfile
 from app.models.bandit_state import BanditState
 from app.models.bandit_update import BanditUpdate
+from app.models.password_reset_otp import PasswordResetOTP
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

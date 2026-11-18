@@ -24,14 +24,17 @@ client.interceptors.request.use((config) => {
   return config
 })
 
-// On 401 Unauthorized: clear stored credentials and redirect to login
+// On 401 Unauthorized: clear stored credentials and redirect to login if not already on public auth pages
 client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      window.location.href = '/login'
+      const publicPaths = ['/login', '/register', '/forgot-password']
+      if (!publicPaths.includes(window.location.pathname)) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }

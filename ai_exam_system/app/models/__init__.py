@@ -7,6 +7,7 @@ from app.models.question_attempt import QuestionAttempt
 from app.models.proctoring import ProctoringEvent, ReviewDecision
 from app.models.bandit_state import BanditState
 from app.models.bandit_update import BanditUpdate
+from app.models.password_reset_otp import PasswordResetOTP
 
 __all__ = [
     "User",
@@ -18,5 +19,6 @@ __all__ = [
     "ProctoringEvent",
     "ReviewDecision",
     "BanditState",
-    "BanditUpdate"
+    "BanditUpdate",
+    "PasswordResetOTP"
 ]

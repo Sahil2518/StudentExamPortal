@@ -16,9 +16,11 @@ if DATABASE_URL:
 
 # Create database engine
 if DATABASE_URL and DATABASE_URL.strip() and DATABASE_URL != "replace_me":
+    connect_args = {"connect_timeout": 5} if "postgresql" in DATABASE_URL else {}
     engine = create_engine(
         DATABASE_URL,
-        pool_pre_ping=True
+        pool_pre_ping=True,
+        connect_args=connect_args
     )
 else:
     # Dummy engine for tests if not provided
