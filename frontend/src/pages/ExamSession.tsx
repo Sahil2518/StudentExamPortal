@@ -23,6 +23,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import client from '../api/client'
 import Spinner from '../components/Spinner'
 import { useCameraProctoring } from '../hooks/useCameraProctoring'
+import { useFaceDetection } from '../hooks/useFaceDetection'
 import MathText from '../components/MathText'
 
 interface SessionDetail {
@@ -168,7 +169,22 @@ export default function ExamSession() {
   }, [sendEvent])
 
   // =========================================================================
-  // AUTO-SUBMIT ON TERMINATION
+  // FACE DETECTION CALLBACKS
+  // =========================================================================
+  const handleNoFace = useCallback(() => {
+    triggerViolation('🚫 No face detected! You must remain visible to the camera at all times.')
+  }, [triggerViolation])
+
+  const handleMultipleFaces = useCallback(() => {
+    triggerViolation('🚫 Multiple faces detected in camera! Only the registered student should be visible.')
+  }, [triggerViolation])
+
+  const { status: faceStatus, faceCount } = useFaceDetection(
+    videoRef,
+    handleNoFace,
+    handleMultipleFaces,
+    phase === 'question' && !examTerminated
+  )
   // =========================================================================
   useEffect(() => {
     if (examTerminated && session) {
@@ -250,6 +266,14 @@ export default function ExamSession() {
   useEffect(() => {
     if (!session || phase !== 'question') return
 
+    // Block drag and drop (KDE Connect / AirDrop style clipboard sync workaround)
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      triggerViolation('⚠️ Drag & drop attempt blocked and recorded.')
+    }
+    const handleDragOver = (e: DragEvent) => e.preventDefault()
+
     // Block right-click
     const handleContextMenu = (e: MouseEvent) => e.preventDefault()
 
@@ -303,6 +327,8 @@ export default function ExamSession() {
     }
 
     document.addEventListener('contextmenu', handleContextMenu)
+    document.addEventListener('drop', handleDrop)
+    document.addEventListener('dragover', handleDragOver)
     document.addEventListener('copy', handleCopy)
     document.addEventListener('cut', handleCopy)
     document.addEventListener('paste', handlePaste)
@@ -312,6 +338,8 @@ export default function ExamSession() {
 
     return () => {
       document.removeEventListener('contextmenu', handleContextMenu)
+      document.removeEventListener('drop', handleDrop)
+      document.removeEventListener('dragover', handleDragOver)
       document.removeEventListener('copy', handleCopy)
       document.removeEventListener('cut', handleCopy)
       document.removeEventListener('paste', handlePaste)
@@ -702,6 +730,24 @@ export default function ExamSession() {
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse mr-1.5" />
               Proctored
             </div>
+
+            {/* AI Face Detection Status */}
+            <div className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border ${
+              faceStatus === 'face_ok'
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : faceStatus === 'no_face'
+                ? 'bg-red-50 text-red-700 border-red-200'
+                : faceStatus === 'multiple_faces'
+                ? 'bg-orange-50 text-orange-700 border-orange-200'
+                : 'bg-gray-50 text-gray-500 border-gray-200'
+            }`}>
+              {faceStatus === 'loading' && '🤖 AI Loading...'}
+              {faceStatus === 'ready' && '🤖 AI Ready'}
+              {faceStatus === 'face_ok' && `✅ Face OK${faceCount !== null ? ` (${faceCount})` : ''}`}
+              {faceStatus === 'no_face' && '🚫 No Face!'}
+              {faceStatus === 'multiple_faces' && `🚫 ${faceCount} Faces!`}
+              {faceStatus === 'error' && '⚠️ Camera Error'}
+            </div>
             <video
               ref={videoRef}
               autoPlay
@@ -980,6 +1026,17 @@ export default function ExamSession() {
               <span className="text-xs">Requesting camera access...</span>
             )}
           </div>
+          {faceStatus !== 'loading' && faceStatus !== 'ready' && (
+            <div className={`text-xs px-2.5 py-1 rounded-full border ${
+              faceStatus === 'face_ok' ? 'bg-green-50 text-green-700 border-green-200'
+              : faceStatus === 'no_face' ? 'bg-red-50 text-red-700 border-red-200 animate-pulse'
+              : 'bg-orange-50 text-orange-700 border-orange-200 animate-pulse'
+            }`}>
+              {faceStatus === 'face_ok' && '✅ Face OK'}
+              {faceStatus === 'no_face' && '🚫 No Face Detected!'}
+              {faceStatus === 'multiple_faces' && '🚫 Multiple Faces!'}
+            </div>
+          )}
           {violations > 0 && (
             <span className="text-xs text-red-600 font-bold bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
               ⚠️ {violations}/{MAX_VIOLATIONS} violations
