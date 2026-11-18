@@ -75,7 +75,7 @@ interface AttemptResult {
 
 type Phase = 'loading' | 'question' | 'feedback' | 'finishing' | 'error'
 
-const MAX_VIOLATIONS = 2
+const MAX_VIOLATIONS = 3
 
 /** Format seconds as MM:SS */
 function formatTime(secs: number): string {
