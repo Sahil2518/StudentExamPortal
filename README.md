@@ -1,7 +1,6 @@
 # Intelligent Exam Portal
 
-**Role:** AI Intern  
-**Company:** Meetmux  
+An enterprise-grade, full-stack adaptive examination and standardized testing platform featuring client-side Edge AI computer vision proctoring, 2PL Multidimensional Item Response Theory (MIRT), Bayesian Thompson Sampling, and serverless PostgreSQL architecture.
 
 ---
 
