@@ -80,7 +80,42 @@ Intelligent Exam Portal Team
 
 
 # ---------------------------------------------------------------------------
-# Resend delivery (primary — works on Render free tier)
+# Brevo delivery (primary — HTTPS API, works on Render free tier, no domain needed)
+# ---------------------------------------------------------------------------
+
+def _send_via_brevo(to_email: str, otp_code: str, user_name: str) -> Dict[str, Any]:
+    import httpx  # already in requirements
+
+    api_key   = os.getenv("BREVO_API_KEY", "").strip()
+    from_email = os.getenv("BREVO_FROM_EMAIL", os.getenv("SMTP_FROM_EMAIL", "sahilagarwal1691@gmail.com")).strip()
+    subject   = f"Your Password Reset Code: {otp_code} - Intelligent Exam Portal"
+
+    payload = {
+        "sender": {"name": "Intelligent Exam Portal", "email": from_email},
+        "to": [{"email": to_email, "name": user_name}],
+        "subject": subject,
+        "htmlContent": _build_html(user_name, otp_code),
+        "textContent": _build_plain(user_name, otp_code),
+    }
+
+    response = httpx.post(
+        "https://api.brevo.com/v3/smtp/email",
+        headers={"api-key": api_key, "Content-Type": "application/json"},
+        json=payload,
+        timeout=15.0,
+    )
+    response.raise_for_status()
+    logger.info("Password reset OTP email delivered via Brevo to %s", to_email)
+    return {
+        "success": True,
+        "delivered": True,
+        "mode": "brevo",
+        "message": "Verification code email sent successfully.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Resend delivery (secondary fallback)
 # ---------------------------------------------------------------------------
 
 def _send_via_resend(to_email: str, otp_code: str, user_name: str) -> Dict[str, Any]:
@@ -165,12 +200,27 @@ def send_password_reset_otp_email(to_email: str, otp_code: str, user_name: str =
       2. SMTP        (SMTP_HOST + SMTP_USER + SMTP_PASSWORD env vars)
       3. Dev fallback (logs OTP, returns dev_otp in response)
     """
+    brevo_key   = os.getenv("BREVO_API_KEY", "").strip()
     resend_key  = os.getenv("RESEND_API_KEY", "").strip()
     smtp_host   = os.getenv("SMTP_HOST", "").strip()
     smtp_user   = os.getenv("SMTP_USER", "").strip()
     smtp_pass   = os.getenv("SMTP_PASSWORD", "").strip()
 
-    # --- 1. Try Resend ---
+    # --- 1. Try Brevo (recommended — no domain needed) ---
+    if brevo_key:
+        try:
+            return _send_via_brevo(to_email, otp_code, user_name)
+        except Exception as exc:
+            logger.error("Brevo delivery failed for %s: %s", to_email, exc)
+            return {
+                "success": False,
+                "delivered": False,
+                "mode": "error",
+                "error": str(exc),
+                "message": "Failed to send verification email via Brevo.",
+            }
+
+    # --- 2. Try Resend ---
     if resend_key:
         try:
             return _send_via_resend(to_email, otp_code, user_name)
@@ -184,7 +234,7 @@ def send_password_reset_otp_email(to_email: str, otp_code: str, user_name: str =
                 "message": "Failed to send verification email via Resend.",
             }
 
-    # --- 2. Try SMTP ---
+    # --- 3. Try SMTP ---
     if smtp_host and smtp_user and smtp_pass:
         try:
             return _send_via_smtp(to_email, otp_code, user_name)
