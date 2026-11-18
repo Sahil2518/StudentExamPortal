@@ -58,7 +58,7 @@ def send_password_reset_otp_email(to_email: str, otp_code: str, user_name: str =
         }
 
     # Prepare Email Content
-    subject = f"Your Password Reset Code: {otp_code} - Exam Portal"
+    subject = f"Your Password Reset Code: {otp_code} - Intelligent Exam Portal"
 
     plain_text = f"""Hello {user_name},
 
@@ -72,7 +72,7 @@ This code is valid for 10 minutes.
 If you did not request a password reset, please ignore this email. Your account remains secure.
 
 Best regards,
-Exam Portal Academic Team
+Intelligent Exam Portal Team
 """
 
     html_content = f"""<!DOCTYPE html>
@@ -84,7 +84,7 @@ Exam Portal Academic Team
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f9fafb; margin: 0; padding: 24px; color: #111827;">
   <div style="max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; border: 1px solid #e5e7eb; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
     <div style="text-align: center; margin-bottom: 24px;">
-      <h1 style="font-size: 24px; font-weight: bold; color: #1d4ed8; margin: 0;">Exam Portal</h1>
+      <h1 style="font-size: 24px; font-weight: bold; color: #1d4ed8; margin: 0;">Intelligent Exam Portal</h1>
       <p style="color: #6b7280; font-size: 14px; margin-top: 4px;">Academic &amp; Adaptive Examination System</p>
     </div>
     

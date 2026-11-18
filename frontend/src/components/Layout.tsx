@@ -31,7 +31,7 @@ export default function Layout() {
             {/* Brand */}
             <div className="flex items-center">
               <Link to="/dashboard" className="text-white font-bold text-lg tracking-wide">
-                Exam Portal
+                Intelligent Exam Portal
               </Link>
 
               {/* Primary navigation links */}
