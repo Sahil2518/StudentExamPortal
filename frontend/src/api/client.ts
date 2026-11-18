@@ -8,11 +8,15 @@
  */
 import axios from 'axios'
 
+const rawBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').trim()
+const baseURL = rawBaseUrl.replace(/\/+$/, '')
+
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000',
+  baseURL,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 seconds for cloud cold starts
 })
 
 // Attach Authorization header from stored token on every request
