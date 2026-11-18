@@ -20,11 +20,12 @@ export interface User {
 }
 
 export interface GoogleAuthPayload {
-  email: string
-  name: string
+  email?: string
+  name?: string
   google_id?: string
   avatar_url?: string
   id_token?: string
+  credential?: string
 }
 
 interface AuthContextValue {

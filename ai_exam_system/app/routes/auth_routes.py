@@ -290,29 +290,56 @@ def google_auth(
     body: GoogleLoginRequest,
     db: Session = Depends(get_db)
 ):
+    raw_token = (body.credential or body.id_token or "").strip()
     raw_email = str(body.email or "").strip().lower()
-    canonical_email = canonicalize_email(raw_email)
+    user_name = (body.name or "").strip()
 
-    # Optional real Google ID token validation if Google Client ID is configured
-    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-    if google_client_id and body.id_token:
+    # 1. Cryptographic Google ID Token verification via Google OAuth2 tokeninfo
+    if raw_token:
         try:
             import httpx
             resp = httpx.get(
                 "https://oauth2.googleapis.com/tokeninfo",
-                params={"id_token": body.id_token},
-                timeout=5.0
+                params={"id_token": raw_token},
+                timeout=10.0
             )
             if resp.status_code == 200:
-                payload = resp.json()
-                verified_email = payload.get("email", "").lower().strip()
+                google_payload = resp.json()
+                verified_email = str(google_payload.get("email") or "").strip().lower()
+                verified_name = str(google_payload.get("name") or "").strip()
+                email_verified = str(google_payload.get("email_verified", "")).lower() == "true"
+
+                if not email_verified:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Google account email is not verified. Please verify your Google account first."
+                    )
                 if verified_email:
-                    canonical_email = canonicalize_email(verified_email)
                     raw_email = verified_email
-        except Exception:
+                if verified_name:
+                    user_name = verified_name
+            else:
+                # If Google token verification failed and client ID is configured, reject
+                google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+                if google_client_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid or expired Google authentication token. Please sign in again."
+                    )
+        except HTTPException:
+            raise
+        except Exception as exc:
             pass
 
-    # Find existing user by canonical email OR raw email
+    if not raw_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing verified email address from Google authentication."
+        )
+
+    canonical_email = canonicalize_email(raw_email)
+
+    # 2. Find existing user by canonical email OR raw email
     db_user = db.query(User).filter(
         (User.email == canonical_email) | (User.email == raw_email)
     ).first()
@@ -320,9 +347,9 @@ def google_auth(
     if not db_user:
         # User not yet registered -> automatically create account via Google SSO
         random_pw = secrets.token_urlsafe(32)
-        user_name = body.name.strip() if body.name and body.name.strip() else "Google Student"
+        clean_name = user_name if user_name else "Google Student"
         db_user = User(
-            name=user_name,
+            name=clean_name,
             email=canonical_email,
             password_hash=hash_password(random_pw),
             role="student"
@@ -332,11 +359,11 @@ def google_auth(
         db.refresh(db_user)
     else:
         # Existing user -> if their name is default or blank, update with Google name
-        if body.name and (not db_user.name or db_user.name in ("Student", "User")):
-            db_user.name = body.name.strip()
+        if user_name and (not db_user.name or db_user.name in ("Student", "User")):
+            db_user.name = user_name
             db.commit()
 
-    # Generate JWT Token with canonical email
+    # 3. Generate JWT Token with canonical email
     token = create_access_token(
         {
             "user_id": str(db_user.id),
