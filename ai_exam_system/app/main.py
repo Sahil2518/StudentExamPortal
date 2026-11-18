@@ -68,6 +68,10 @@ async def lifespan(app: FastAPI):
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         logger.info("Database connection verified on startup. (Schema should be managed by Alembic)")
+
+        # Ensure password_reset_otps table exists idempotently
+        from app.models.password_reset_otp import PasswordResetOTP
+        PasswordResetOTP.__table__.create(bind=engine, checkfirst=True)
     except Exception as exc:
         logger.warning(
             "Database initialization failed: %s. "
