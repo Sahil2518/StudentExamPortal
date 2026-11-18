@@ -157,8 +157,18 @@ def _call_llm_tutor(
     the API key is not configured.
     """
 
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not api_key:
+    providers = []
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if gemini_key:
+        providers.append(("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", gemini_key, "gemini-3.5-flash-lite"))
+    openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if openai_key:
+        providers.append(("OpenAI", "https://api.openai.com/v1/chat/completions", openai_key, "gpt-4o-mini"))
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if groq_key:
+        providers.append(("Groq", "https://api.groq.com/openai/v1/chat/completions", groq_key, "llama-3.3-70b-versatile"))
+
+    if not providers:
         return None
 
     try:
@@ -190,32 +200,37 @@ def _call_llm_tutor(
                 "what the student should study to strengthen this skill."
             )
 
-        response = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-4o-mini",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                "max_tokens": 300,
-                "temperature": 0.4,
-            },
-            timeout=15.0,
-        )
+        for prov_name, api_url, api_key, model_name in providers:
+            try:
+                response = httpx.post(
+                    api_url,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model_name,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message},
+                        ],
+                        "max_tokens": 300,
+                        "temperature": 0.4,
+                    },
+                    timeout=15.0,
+                )
 
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        else:
-            logger.warning(
-                "OpenAI API returned %s: %s",
-                response.status_code, response.text[:200]
-            )
-            return None
+                if response.status_code == 200:
+                    return response.json()["choices"][0]["message"]["content"]
+                else:
+                    logger.warning(
+                        "%s API returned %s: %s",
+                        prov_name, response.status_code, response.text[:200]
+                    )
+            except Exception as e:
+                logger.warning("Call to %s failed: %s", prov_name, e)
+
+        return None
 
     except Exception as exc:
         logger.warning("LLM tutor call failed: %s", exc)

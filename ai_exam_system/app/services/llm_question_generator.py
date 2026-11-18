@@ -162,7 +162,7 @@ def generate_llm_question(
             "Gemini",
             "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             gemini_key,
-            "gemini-1.5-flash"
+            "gemini-3.5-flash-lite"
         ))
 
     if openai_key:

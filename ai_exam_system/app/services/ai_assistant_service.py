@@ -198,6 +198,8 @@ def generate_ai_response(
     openai_key = os.getenv("OPENAI_API_KEY")
 
     providers = []
+    if gemini_key:
+        providers.append(("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", gemini_key, "gemini-3.5-flash-lite"))
     if groq_key:
         providers.append(("Groq-Qwen", "https://api.groq.com/openai/v1/chat/completions", groq_key, "qwen/qwen3.8-27b"))
         providers.append(("Groq-GPT-OSS", "https://api.groq.com/openai/v1/chat/completions", groq_key, "openai/gpt-oss-20b"))
