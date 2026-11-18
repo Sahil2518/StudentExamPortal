@@ -6,9 +6,17 @@
  *    - Negative marking (+4 / -1)
  *    - No instant feedback / spoilers during exam
  *    - Final submit modal
+ *    - Countdown Timer with auto-submit
  * 2. Adaptive Practice Exam:
  *    - Dynamic Thompson Sampling question sequencing
  *    - Immediate feedback & AI tutor explanations
+ *
+ * Proctoring:
+ *    - Fullscreen enforcement (auto re-enter on exit)
+ *    - Tab switch / window blur detection → violation counter
+ *    - Blocks: right-click, Ctrl+C/V/A/U/S/P, Ctrl+Shift+I/J/C, F12, PrintScreen
+ *    - Text selection disabled
+ *    - Auto-terminate + submit after 5 violations
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -67,6 +75,15 @@ interface AttemptResult {
 
 type Phase = 'loading' | 'question' | 'feedback' | 'finishing' | 'error'
 
+const MAX_VIOLATIONS = 5
+
+/** Format seconds as MM:SS */
+function formatTime(secs: number): string {
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 export default function ExamSession() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
@@ -94,28 +111,229 @@ export default function ExamSession() {
 
   const questionStartRef = useRef<number>(Date.now())
 
-  // Window focus monitoring
-  useEffect(() => {
-    const handleBlur = () => {
-      sendEvent('focus_lost', 'medium', 1.0, { reason: 'window_blur' })
+  // =========================================================================
+  // TIMER STATE
+  // =========================================================================
+  const [timeLeft, setTimeLeft] = useState<number | null>(null)
+  const timerStartedRef = useRef(false)
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const finishingRef = useRef(false) // prevent double-finish
+
+  // =========================================================================
+  // PROCTORING ENFORCEMENT STATE
+  // =========================================================================
+  const [violations, setViolations] = useState(0)
+  const [showViolationWarning, setShowViolationWarning] = useState(false)
+  const [violationMessage, setViolationMessage] = useState('')
+  const [examTerminated, setExamTerminated] = useState(false)
+  const violationsRef = useRef(0) // keep ref in sync for use in closures
+
+  // =========================================================================
+  // FINISH SESSION
+  // =========================================================================
+  const finishSession = useCallback(async () => {
+    if (finishingRef.current) return
+    finishingRef.current = true
+    // Exit fullscreen cleanly
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {})
     }
-    window.addEventListener('blur', handleBlur)
-    return () => window.removeEventListener('blur', handleBlur)
+    setShowSubmitModal(false)
+    setPhase('finishing')
+    try {
+      await client.post(`/exam-sessions/${sessionId}/finish`)
+      navigate(`/exam/results/${sessionId}`)
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } }
+      setErrorMsg(axiosErr.response?.data?.detail || 'Failed to finish session.')
+      setPhase('error')
+      finishingRef.current = false
+    }
+  }, [sessionId, navigate])
+
+  // =========================================================================
+  // VIOLATION HANDLER
+  // =========================================================================
+  const triggerViolation = useCallback((message: string) => {
+    violationsRef.current += 1
+    const newCount = violationsRef.current
+    setViolations(newCount)
+    setViolationMessage(message)
+    setShowViolationWarning(true)
+    // Report to backend
+    sendEvent('proctoring_violation', 'high', 1.0, { message, count: newCount })
+    if (newCount >= MAX_VIOLATIONS) {
+      setExamTerminated(true)
+    }
   }, [sendEvent])
 
-  // Load session
+  // =========================================================================
+  // AUTO-SUBMIT ON TERMINATION
+  // =========================================================================
+  useEffect(() => {
+    if (examTerminated && session) {
+      // Give 3 seconds for the student to see the termination message
+      const t = setTimeout(() => {
+        finishSession()
+      }, 3000)
+      return () => clearTimeout(t)
+    }
+  }, [examTerminated, session, finishSession])
+
+  // =========================================================================
+  // TIMER — Initialize once session loads
+  // =========================================================================
+  useEffect(() => {
+    if (!session || phase !== 'question' || timerStartedRef.current) return
+    if (!session.time_limit_seconds) return
+    timerStartedRef.current = true
+    setTimeLeft(session.time_limit_seconds)
+
+    timerIntervalRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev === null) return null
+        if (prev <= 1) {
+          clearInterval(timerIntervalRef.current!)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
+    }
+  }, [session, phase])
+
+  // Auto-submit when timer hits 0
+  useEffect(() => {
+    if (timeLeft === 0 && session && phase === 'question') {
+      finishSession()
+    }
+  }, [timeLeft, session, phase, finishSession])
+
+  // =========================================================================
+  // FULLSCREEN ENFORCEMENT
+  // =========================================================================
+  useEffect(() => {
+    if (phase !== 'question' || !session) return
+
+    const enterFullscreen = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {})
+      }
+    }
+
+    // Enter fullscreen initially
+    enterFullscreen()
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && phase === 'question') {
+        triggerViolation('⚠️ Fullscreen mode was exited! This has been recorded.')
+        // Attempt to re-enter after a short delay
+        setTimeout(enterFullscreen, 1500)
+      }
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {})
+      }
+    }
+  }, [phase, session, triggerViolation])
+
+  // =========================================================================
+  // PROCTORING — Block shortcuts, right-click, copy, tab-switch
+  // =========================================================================
+  useEffect(() => {
+    if (!session || phase !== 'question') return
+
+    // Block right-click
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault()
+
+    // Block copy / cut
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault()
+      triggerViolation('⚠️ Copy/Cut attempt blocked and recorded.')
+    }
+
+    // Block paste
+    const handlePaste = (e: ClipboardEvent) => {
+      e.preventDefault()
+      triggerViolation('⚠️ Paste attempt blocked and recorded.')
+    }
+
+    // Block keyboard shortcuts
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey
+      const key = e.key.toLowerCase()
+
+      // PrintScreen
+      if (e.key === 'PrintScreen') {
+        e.preventDefault()
+        triggerViolation('⚠️ Screenshot attempt detected and recorded.')
+        return
+      }
+
+      // Dev tools & common shortcuts
+      if (
+        (ctrl && ['c', 'v', 'a', 'u', 's', 'p', 'f'].includes(key)) ||
+        (ctrl && e.shiftKey && ['i', 'j', 'c', 'k'].includes(key)) ||
+        e.key === 'F12' ||
+        e.key === 'F11'
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        triggerViolation(`⚠️ Blocked shortcut: ${e.ctrlKey ? 'Ctrl+' : ''}${e.shiftKey ? 'Shift+' : ''}${e.key}`)
+      }
+    }
+
+    // Tab switch / window hidden
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        triggerViolation('⚠️ Tab switch or window minimize detected!')
+      }
+    }
+
+    // Window blur
+    const handleBlur = () => {
+      triggerViolation('⚠️ Window lost focus — possible tab switch detected.')
+    }
+
+    document.addEventListener('contextmenu', handleContextMenu)
+    document.addEventListener('copy', handleCopy)
+    document.addEventListener('cut', handleCopy)
+    document.addEventListener('paste', handlePaste)
+    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('blur', handleBlur)
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu)
+      document.removeEventListener('copy', handleCopy)
+      document.removeEventListener('cut', handleCopy)
+      document.removeEventListener('paste', handlePaste)
+      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('blur', handleBlur)
+    }
+  }, [session, phase, triggerViolation])
+
+  // =========================================================================
+  // LOAD SESSION
+  // =========================================================================
   const loadSession = useCallback(async () => {
     const res = await client.get(`/exam-sessions/${sessionId}`)
     return res.data as SessionDetail
   }, [sessionId])
 
-  // Load Palette for Live Exam
   const loadPalette = useCallback(async () => {
     const res = await client.get(`/exam-sessions/${sessionId}/live-palette`)
     return res.data.palette as PaletteItem[]
   }, [sessionId])
 
-  // Load Live Question by Sequence Number
   const loadLiveQuestion = useCallback(async (seq: number) => {
     const res = await client.get(`/exam-sessions/${sessionId}/question-by-seq/${seq}`)
     const data = res.data as CurrentQuestion
@@ -125,7 +343,6 @@ export default function ExamSession() {
     questionStartRef.current = Date.now()
   }, [sessionId])
 
-  // Fetch next Adaptive Question
   const loadNextAdaptiveQuestion = useCallback(async (sId: string) => {
     const res = await client.get(`/exam-sessions/${sId}/next-question`)
     const data = res.data
@@ -159,7 +376,6 @@ export default function ExamSession() {
           if (cancelled) return
           setPhase('question')
         } else {
-          // Adaptive mode
           const q = await loadNextAdaptiveQuestion(s.id)
           if (cancelled) return
           setAdaptiveQuestion(q)
@@ -174,46 +390,12 @@ export default function ExamSession() {
       }
     }
     init()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [loadSession, loadPalette, loadLiveQuestion, loadNextAdaptiveQuestion])
 
-  // Proctoring telemetry
-  useEffect(() => {
-    if (!session || phase !== 'question') return
-
-    const reportEvent = (eventType: string) => {
-      client.post('/proctoring-events', {
-        exam_session_id: session.id,
-        event_type: eventType,
-        severity: 'medium',
-        confidence: 1.0
-      }).catch(() => {})
-    }
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') reportEvent('tab_switch')
-    }
-    const handleBlur = () => reportEvent('focus_lost')
-    const handlePaste = (e: ClipboardEvent) => {
-      reportEvent('clipboard_paste')
-      e.preventDefault()
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('blur', handleBlur)
-    window.addEventListener('paste', handlePaste)
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('blur', handleBlur)
-      window.removeEventListener('paste', handlePaste)
-    }
-  }, [session, phase])
-
-  // ---- LIVE EXAM HANDLERS ----
-
+  // =========================================================================
+  // LIVE EXAM HANDLERS
+  // =========================================================================
   const handleSaveAndNext = async (markForReview = false) => {
     if (!liveQuestion || !session || savingAnswer) return
     setSavingAnswer(true)
@@ -234,7 +416,6 @@ export default function ExamSession() {
         time_taken: timeSpent
       })
 
-      // Update palette locally
       setPalette((prev) =>
         prev.map((item) =>
           item.sequence_number === activeSeq
@@ -243,7 +424,6 @@ export default function ExamSession() {
         )
       )
 
-      // Move to next sequence if available
       if (activeSeq < palette.length) {
         await loadLiveQuestion(activeSeq + 1)
       }
@@ -288,7 +468,6 @@ export default function ExamSession() {
         retries++
       }
     }
-    // Auto-save current choice before jumping if changed
     if (liveQuestion && selectedLiveOption !== liveQuestion.selected_option) {
       await client.post(`/exam-sessions/${sessionId}/live-answer`, {
         question_id: liveQuestion.question_id,
@@ -299,8 +478,9 @@ export default function ExamSession() {
     await loadLiveQuestion(targetSeq)
   }
 
-  // ---- ADAPTIVE PRACTICE HANDLERS ----
-
+  // =========================================================================
+  // ADAPTIVE PRACTICE HANDLERS
+  // =========================================================================
   const handleAdaptiveAnswer = async (optionKey: string) => {
     if (!adaptiveQuestion || !session || submittingAdaptive) return
     setSelectedAdaptiveOption(optionKey)
@@ -347,24 +527,28 @@ export default function ExamSession() {
     }
   }
 
-  const finishSession = async () => {
-    if (!session) return
-    setPhase('finishing')
-    try {
-      await client.post(`/exam-sessions/${session.id}/finish`)
-      navigate(`/exam/results/${session.id}`)
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } }
-      setErrorMsg(axiosErr.response?.data?.detail || 'Failed to finish session.')
-      setPhase('error')
-    }
-  }
-
-  // Palette counts for Live Exam summary
+  // Palette counts
   const answeredCountLive = palette.filter((p) => p.selected_option !== null).length
   const markedReviewCount = palette.filter((p) => p.review_status === 'marked_for_review' || p.review_status === 'answered_and_marked').length
   const notAnsweredCount = palette.length - answeredCountLive
 
+  // =========================================================================
+  // SHARED UI HELPERS
+  // =========================================================================
+
+  // Timer display color
+  const timerColor =
+    timeLeft === null
+      ? 'text-gray-700'
+      : timeLeft < 300
+      ? 'text-red-600 font-extrabold animate-pulse'
+      : timeLeft < 600
+      ? 'text-orange-500 font-bold'
+      : 'text-green-700 font-bold'
+
+  // =========================================================================
+  // RENDER: ERROR
+  // =========================================================================
   if (phase === 'error') {
     return (
       <div className="max-w-2xl mx-auto mt-12 p-6 bg-red-50 border border-red-300 rounded-lg">
@@ -392,11 +576,93 @@ export default function ExamSession() {
   }
 
   // =========================================================================
+  // RENDER: EXAM TERMINATED
+  // =========================================================================
+  if (examTerminated) {
+    return (
+      <div className="fixed inset-0 bg-red-900 flex flex-col items-center justify-center text-white z-50">
+        <div className="text-center space-y-4 p-8 max-w-lg">
+          <div className="text-6xl">🚫</div>
+          <h1 className="text-2xl font-extrabold">Exam Terminated</h1>
+          <p className="text-red-200">
+            Your exam has been terminated due to <strong>{MAX_VIOLATIONS} proctoring violations</strong>.
+            All violations have been recorded and reported.
+          </p>
+          <div className="bg-red-800 rounded-lg p-4 text-sm text-red-100 text-left space-y-1">
+            <p>• Tab switching or window switching</p>
+            <p>• Exiting fullscreen mode</p>
+            <p>• Attempting to copy content</p>
+            <p>• Using blocked keyboard shortcuts</p>
+          </div>
+          <p className="text-red-300 text-sm animate-pulse">Submitting your exam automatically...</p>
+          <Spinner size="md" />
+        </div>
+      </div>
+    )
+  }
+
+  // =========================================================================
+  // SHARED: VIOLATION WARNING MODAL
+  // =========================================================================
+  const ViolationModal = () =>
+    showViolationWarning ? (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl border-2 border-red-500 space-y-4">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">⚠️</span>
+            <div>
+              <h3 className="text-lg font-extrabold text-red-700">Proctoring Violation Detected</h3>
+              <p className="text-xs text-gray-500 mt-0.5">This incident has been recorded</p>
+            </div>
+          </div>
+
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 font-medium">
+            {violationMessage}
+          </div>
+
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-gray-600">
+              Violations: <strong className="text-red-600">{violations}</strong> / {MAX_VIOLATIONS}
+            </span>
+            {violations >= MAX_VIOLATIONS - 1 && (
+              <span className="text-red-700 font-bold text-xs bg-red-50 border border-red-300 px-2 py-1 rounded">
+                ⚠️ NEXT VIOLATION = AUTO SUBMIT
+              </span>
+            )}
+          </div>
+
+          {/* Violation progress bar */}
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className="bg-red-500 h-2 rounded-full transition-all"
+              style={{ width: `${(violations / MAX_VIOLATIONS) * 100}%` }}
+            />
+          </div>
+
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            <strong>Warning:</strong> Any further violations (tab switching, fullscreen exit, copy attempts,
+            keyboard shortcuts) will result in automatic exam termination.
+          </div>
+
+          <button
+            onClick={() => setShowViolationWarning(false)}
+            className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-colors"
+          >
+            I Understand — Return to Exam
+          </button>
+        </div>
+      </div>
+    ) : null
+
+  // =========================================================================
   // 1. LIVE ENTRANCE EXAM UI (JEE / NEET / CAT FORMAT)
   // =========================================================================
   if (session.exam_type === 'live') {
     return (
-      <div className="max-w-7xl mx-auto space-y-4">
+      // select-none prevents text selection (screenshot prevention)
+      <div className="max-w-7xl mx-auto space-y-4 select-none" onContextMenu={(e) => e.preventDefault()}>
+        <ViolationModal />
+
         {/* Top Header Bar */}
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex flex-wrap justify-between items-center gap-3">
           <div>
@@ -414,11 +680,27 @@ export default function ExamSession() {
             </p>
           </div>
 
-          {/* Camera proctoring pill */}
           <div className="flex items-center gap-3">
+            {/* Violation badge */}
+            {violations > 0 && (
+              <div className="flex items-center text-xs text-red-700 bg-red-50 px-2.5 py-1 rounded-full border border-red-200">
+                ⚠️ Violations: {violations}/{MAX_VIOLATIONS}
+              </div>
+            )}
+
+            {/* Countdown Timer */}
+            {timeLeft !== null && (
+              <div className={`flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg ${timerColor}`}>
+                <span className="text-sm">⏱</span>
+                <span className="text-base tabular-nums">{formatTime(timeLeft)}</span>
+                {timeLeft < 300 && <span className="text-xs">LEFT</span>}
+              </div>
+            )}
+
+            {/* Webcam + status */}
             <div className="flex items-center text-xs text-green-700 bg-green-50 px-2.5 py-1 rounded-full border border-green-200">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse mr-1.5" />
-              Webcam Proctor Active
+              Proctored
             </div>
             <video
               ref={videoRef}
@@ -436,7 +718,7 @@ export default function ExamSession() {
           </div>
         </div>
 
-        {/* Main Grid: Question (Left 70%) & Question Palette (Right 30%) */}
+        {/* Main Grid: Question (Left) & Palette (Right) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           {/* Question Panel */}
           <div className="lg:col-span-8 bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-6">
@@ -460,7 +742,7 @@ export default function ExamSession() {
                   <MathText text={liveQuestion.question_text} />
                 </div>
 
-                {/* Options List */}
+                {/* Options */}
                 <div className="space-y-3 pt-2">
                   {Object.entries(liveQuestion.options).map(([key, text]) => {
                     const isSelected = selectedLiveOption === key
@@ -491,7 +773,7 @@ export default function ExamSession() {
                   })}
                 </div>
 
-                {/* Action Buttons: Save & Next, Mark for Review, Clear Response */}
+                {/* Action Buttons */}
                 <div className="pt-6 border-t border-gray-100 flex flex-wrap justify-between items-center gap-2">
                   <div className="flex gap-2">
                     <button
@@ -576,7 +858,7 @@ export default function ExamSession() {
               </div>
             </div>
 
-            {/* Palette Grid Numbers (1 to N) */}
+            {/* Palette Grid */}
             <div className="border rounded-lg p-3 bg-gray-50 max-h-72 overflow-y-auto">
               <div className="grid grid-cols-5 gap-2">
                 {palette.map((item) => {
@@ -617,7 +899,7 @@ export default function ExamSession() {
           </div>
         </div>
 
-        {/* Confirmation Modal */}
+        {/* Submit Confirmation Modal */}
         {showSubmitModal && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl space-y-4">
@@ -643,6 +925,12 @@ export default function ExamSession() {
                   <span>Not Answered:</span>
                   <span className="font-bold">{notAnsweredCount}</span>
                 </div>
+                {timeLeft !== null && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Time Remaining:</span>
+                    <span className={`font-bold ${timeLeft < 300 ? 'text-red-600' : ''}`}>{formatTime(timeLeft)}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -674,30 +962,46 @@ export default function ExamSession() {
   const optionKeys = Object.keys(adaptiveQuestion.options)
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6 select-none" onContextMenu={(e) => e.preventDefault()}>
+      <ViolationModal />
+
       {/* Proctoring camera feed */}
       <div className="flex justify-between items-center bg-gray-100 rounded-lg p-3">
-        <div className="text-sm text-gray-600">
-          {hasPermission ? (
-            <span className="flex items-center text-green-600 gap-1 text-xs">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              Camera active (Proctoring)
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-gray-600">
+            {hasPermission ? (
+              <span className="flex items-center text-green-600 gap-1 text-xs">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                Camera active (Proctoring)
+              </span>
+            ) : cameraError ? (
+              <span className="text-red-600 text-xs">{cameraError}</span>
+            ) : (
+              <span className="text-xs">Requesting camera access...</span>
+            )}
+          </div>
+          {violations > 0 && (
+            <span className="text-xs text-red-600 font-bold bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+              ⚠️ {violations}/{MAX_VIOLATIONS} violations
             </span>
-          ) : cameraError ? (
-            <span className="text-red-600 text-xs">{cameraError}</span>
-          ) : (
-            <span className="text-xs">Requesting camera access...</span>
           )}
         </div>
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className={`w-28 h-20 object-cover rounded shadow border ${
-            hasPermission ? 'border-green-300' : 'border-gray-300'
-          }`}
-        />
+        <div className="flex items-center gap-3">
+          {timeLeft !== null && (
+            <div className={`flex items-center gap-1.5 bg-white border border-gray-200 px-3 py-1 rounded-lg text-sm tabular-nums ${timerColor}`}>
+              ⏱ {formatTime(timeLeft)}
+            </div>
+          )}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`w-28 h-20 object-cover rounded shadow border ${
+              hasPermission ? 'border-green-300' : 'border-gray-300'
+            }`}
+          />
+        </div>
       </div>
 
       {/* Header: session info + progress */}
@@ -762,11 +1066,7 @@ export default function ExamSession() {
                 else cls += ' border-gray-200 opacity-60'
                 return (
                   <div key={key} className={cls}>
-                    <span
-                      className={`font-semibold min-w-[1.5rem] ${
-                        isCorrect ? 'text-green-600' : isSelected ? 'text-red-500' : 'text-gray-400'
-                      }`}
-                    >
+                    <span className={`font-semibold min-w-[1.5rem] ${isCorrect ? 'text-green-600' : isSelected ? 'text-red-500' : 'text-gray-400'}`}>
                       {key}.
                     </span>
                     <span className="text-gray-700"><MathText text={adaptiveQuestion.options[key]} /></span>
@@ -779,16 +1079,8 @@ export default function ExamSession() {
               })}
             </div>
 
-            <div
-              className={`p-4 rounded-md border ${
-                attemptResult.is_correct ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'
-              }`}
-            >
-              <p
-                className={`font-semibold mb-1 ${
-                  attemptResult.is_correct ? 'text-green-800' : 'text-red-800'
-                }`}
-              >
+            <div className={`p-4 rounded-md border ${attemptResult.is_correct ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`}>
+              <p className={`font-semibold mb-1 ${attemptResult.is_correct ? 'text-green-800' : 'text-red-800'}`}>
                 {attemptResult.is_correct ? '✨ Correct Answer!' : '❌ Incorrect'}
               </p>
               {attemptResult.explanation && (
